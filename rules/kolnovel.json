@@ -1,0 +1,13 @@
+{
+  "id": "novel.kolnovel",
+  "domain": "kolnovel.com",
+  "selectors": {
+    "catalogCards": "article.maindet",
+    "catalogTitle": ".mdinfo h2 a, h2 a",
+    "catalogCover": ".mdthumb img",
+    "detailsTitle": "h1.entry-title",
+    "detailsCover": ".sertothumb img",
+    "description": ".sersys[itemprop=description]",
+    "text": "#kol_content"
+  }
+}

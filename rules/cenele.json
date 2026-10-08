@@ -1,0 +1,11 @@
+{
+  "id": "novel.cenele",
+  "domain": "cenele.com",
+  "selectors": {
+    "catalogCards": ".nhv-library-card__cover, .nhv-cover, .tab-thumb a, .item-thumb a",
+    "detailsTitle": "h1.nhv-novel-title",
+    "detailsCover": ".nhv-novel-cover img",
+    "description": ".nhv-novel-synopsis",
+    "text": ".reading-content"
+  }
+}

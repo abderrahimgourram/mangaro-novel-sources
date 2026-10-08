@@ -1,0 +1,9 @@
+{
+  "id": "novel.sunovels",
+  "domain": "sunovels.com",
+  "selectors": {
+    "catalogCards": ".list-item a[href^=\"/novel/\"]",
+    "description": ".description",
+    "text": ".chapter-content"
+  }
+}

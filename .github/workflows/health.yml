@@ -1,0 +1,27 @@
+name: Novel source health
+on:
+  schedule:
+    - cron: '21 4 * * 2,5'
+  workflow_dispatch:
+  pull_request:
+    paths: ['rules/**', 'tools/**', 'requirements.txt']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python tools/validate.py
+      - run: python tools/health.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-health-no-content
+          path: health.json
+          retention-days: 7

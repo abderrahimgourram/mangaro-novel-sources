@@ -1,0 +1,7 @@
+{
+  "id": "novel.seanovel",
+  "domain": "seanovel.org",
+  "selectors": {
+    "text": "article.reader-content"
+  }
+}

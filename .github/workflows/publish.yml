@@ -1,0 +1,60 @@
+name: Publish validated novel rules
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        type: number
+        required: true
+      reviewed:
+        description: Security, licensing and content-handling review completed
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: novel-rules-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: inputs.reviewed
+    environment: reviewed-novel-rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python tools/validate.py --revision "$RULE_REVISION"
+        env:
+          RULE_REVISION: ${{ inputs.revision }}
+      - run: python tools/health.py
+      - name: Sign only after every probe passes
+        env:
+          RULE_REVISION: ${{ inputs.revision }}
+          RULE_SIGNING_KEY: ${{ secrets.NOVEL_RULE_SIGNING_KEY }}
+        run: |
+          key_file="$RUNNER_TEMP/novel-rules.pem"
+          trap 'rm -f "$key_file"' EXIT
+          umask 077
+          printf '%s' "$RULE_SIGNING_KEY" > "$key_file"
+          NOVEL_RULE_SIGNING_KEY_FILE="$key_file" python tools/package.py
+      - name: Verify envelope with pinned public key
+        run: python tools/verify.py
+      - name: Publish new compatible rules without overwriting prior revisions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RULE_REVISION: ${{ inputs.revision }}
+        run: |
+          tag="novel-rules-v$RULE_REVISION"
+          if gh release view "$tag" >/dev/null 2>&1; then exit 1; fi
+          gh release create "$tag" staging/* --title "$tag" --notes 'Validated declarative novel extraction rules. No chapter content.'
+          mkdir -p published
+          cp staging/* published/
+          git config user.name 'novel-rules-bot'
+          git config user.email 'novel-rules-bot@users.noreply.github.com'
+          git add published
+          git commit -m "rules: publish validated revision $RULE_REVISION"
+          git push origin HEAD:main
