@@ -4,6 +4,7 @@
   "selectors": {
     "catalogCards": ".list-item a[href^=\"/novel/\"]",
     "description": ".description",
-    "text": ".chapter-content"
+    "text": ".chapter-content",
+    "originalTitle": ".main-head h1"
   }
 }

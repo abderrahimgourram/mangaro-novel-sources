@@ -3,58 +3,72 @@ on:
   workflow_dispatch:
     inputs:
       revision:
+        description: New strictly increasing revision
         type: number
         required: true
+      rollback_revision:
+        description: Optional prior revision to revalidate and reissue (0 for current rules)
+        type: number
+        default: 0
       reviewed:
         description: Security, licensing and content-handling review completed
         type: boolean
         default: false
         required: true
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: novel-rules-publish
   cancel-in-progress: false
 jobs:
   publish:
-    if: inputs.reviewed
+    if: inputs.reviewed && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     environment: reviewed-novel-rules
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      RULE_REVISION: ${{ inputs.revision }}
+      ROLLBACK_REVISION: ${{ inputs.rollback_revision }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - run: python tools/validate.py --revision "$RULE_REVISION"
-        env:
-          RULE_REVISION: ${{ inputs.revision }}
-      - run: python tools/health.py
+      - name: Validate compatibility, increasing revision and optional rollback
+        run: |
+          python -m unittest discover -s tests -v
+          python tools/prepare.py --revision "$RULE_REVISION" --rollback "$ROLLBACK_REVISION"
+      - name: Health-check the exact candidate before accessing the signing key
+        run: python tools/health.py --bundle bundle.json
       - name: Sign only after every probe passes
         env:
-          RULE_REVISION: ${{ inputs.revision }}
           RULE_SIGNING_KEY: ${{ secrets.NOVEL_RULE_SIGNING_KEY }}
         run: |
           key_file="$RUNNER_TEMP/novel-rules.pem"
           trap 'rm -f "$key_file"' EXIT
           umask 077
+          test -n "$RULE_SIGNING_KEY"
           printf '%s' "$RULE_SIGNING_KEY" > "$key_file"
           NOVEL_RULE_SIGNING_KEY_FILE="$key_file" python tools/package.py
-      - name: Verify envelope with pinned public key
+      - name: Verify both signatures and hash/version bindings
         run: python tools/verify.py
-      - name: Publish new compatible rules without overwriting prior revisions
+      - name: Publish immutable assets, then advance the last-known-good feed
         env:
           GH_TOKEN: ${{ github.token }}
-          RULE_REVISION: ${{ inputs.revision }}
-        run: |
-          tag="novel-rules-v$RULE_REVISION"
-          if gh release view "$tag" >/dev/null 2>&1; then exit 1; fi
-          gh release create "$tag" staging/* --title "$tag" --notes 'Validated declarative novel extraction rules. No chapter content.'
-          mkdir -p published
-          cp staging/* published/
-          git config user.name 'novel-rules-bot'
-          git config user.email 'novel-rules-bot@users.noreply.github.com'
-          git add published
-          git commit -m "rules: publish validated revision $RULE_REVISION"
-          git push origin HEAD:main
+        run: python tools/publish.py
+      - name: Write source status summary
+        if: always()
+        run: python tools/report.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: publication-health-no-content
+          path: health.json
+          if-no-files-found: warn
+          retention-days: 7

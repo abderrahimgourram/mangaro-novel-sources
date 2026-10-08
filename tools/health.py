@@ -5,11 +5,12 @@ from urllib.parse import urljoin,urlparse
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
-from validate import ROOT,build
+from validate import ROOT,build,validate
 SESSION=requests.Session();SESSION.headers['User-Agent']='MangaroNovelPrototype/0.1'
-CONFIG={x['domain']:x['selectors'] for x in build(1)['sources']}
+CONFIG={x['domain']:x['selectors'] for x in build(2)['sources']}
 def fetch(url,data=None):
- assert urlparse(url).scheme=='https' and urlparse(url).hostname in CONFIG
+ parsed=urlparse(url)
+ assert parsed.scheme=='https' and parsed.hostname in CONFIG and parsed.port in (None,443) and not parsed.username and not parsed.password
  response=SESSION.post(url,data=data,timeout=(10,25),allow_redirects=False,stream=True) if data else SESSION.get(url,timeout=(10,25),allow_redirects=False,stream=True)
  try:
   response.raise_for_status();chunks=[];size=0
@@ -33,20 +34,48 @@ def probe(domain,result):
   result['catalog']=True;result['checking']='search';result['search']=any('تيرا' in x.get('title_ar','') for x in entries)
   result['checking']='details'
   item=fetch('https://seanovel.org/api/novel/'+detail.rsplit('/',1)[1]).json();result['details']=bool(item.get('description'))
-  result['checking']='chapters';chapters=item['chapters'];result['chapters']=bool(chapters);chapter=detail+'/chapters/'+str(chapters[0]['id'])
+  result['checking']='chapters';chapters=item['chapters'];result['chapters']=bool(chapters);result.update(chapterCount=len({str(c['id']) for c in chapters}),chapterPages=1,completeIndex=True);chapter=detail+'/chapters/'+str(chapters[0]['id'])
  else:
   result['catalog']=bool(html(catalog).select(rules['catalogCards']))
   result['checking']='search';result['search']=bool(html(search).select(rules['catalogCards']))
   result['checking']='details';d=html(detail);result['details']=bool(d.select_one(rules.get('description','.description')))
   result['checking']='chapters'
-  if domain=='kolnovel.com':links=list(reversed(d.select('.eplister li[data-id] > a')))
-  elif domain=='sunovels.com':links=html(detail+'?activeTab=chapters&page=0').select('ul.chaptersList a')
+  urls=[];pages=0;volume_counts={}
+  if domain=='kolnovel.com':
+   links=list(reversed(d.select('.eplister li[data-id] > a')));urls=[urljoin(detail,a['href']) for a in links];pages=1
+  elif domain=='sunovels.com':
+   page=0
+   while page<2000:
+    doc=html(detail+'?activeTab=chapters&page='+str(page));links=doc.select('ul.chaptersList a')
+    new=[urljoin(detail,a['href']) for a in links if urljoin(detail,a['href']) not in urls]
+    assert new, 'Chapter pagination made no progress'
+    urls+=new;pages+=1
+    total=max([int(re.search(r'\d+',a.get('aria-label',''))[0]) for a in doc.select('a[aria-label^=Page]')] or [page+1])
+    if page+1>=total:break
+    page+=1;time.sleep(.25)
+   else:raise AssertionError('Incomplete chapter pagination')
   else:
    script=d.select_one('#nhv-novel-single-v2-js-extra').decode_contents()
    config=json.loads(re.search(r'var nhvNovelV2 = (\{.*?\});',script,re.S)[1])
-   response=fetch('https://cenele.com/wp-admin/admin-ajax.php',{'action':'nhv_manga_single_chapters_page','nonce':config['chaptersNonce'],'manga_id':config['postId'],'volume':'0','page':'1','per_page':'50','order':'asc'}).json()
-   assert response.get('success');links=BeautifulSoup(response['html'],'html5lib').select('.wp-manga-chapter a')
-  result['chapters']=bool(links);chapter=urljoin(detail,links[0]['href'])
+   fields={'action':'nhv_manga_single_chapters_page','nonce':config['chaptersNonce'],'manga_id':config['postId'],'volume':'-1','page':'1','per_page':'50','order':'asc','meta_only':'1'}
+   meta=fetch('https://cenele.com/wp-admin/admin-ajax.php',fields).json();assert meta.get('success') and meta.get('volumes')
+   fields.pop('meta_only')
+   for volume in meta['volumes']:
+    fields['volume']=str(volume['num']);seen=0
+    for page in range(1,2001):
+     fields['page']=str(page)
+     response=fetch('https://cenele.com/wp-admin/admin-ajax.php',fields).json();assert response.get('success') and isinstance(response.get('has_more'),bool)
+     links=BeautifulSoup(response['html'],'html5lib').select('.wp-manga-chapter a')
+     new=[urljoin(detail,a['href']) for a in links if urljoin(detail,a['href']) not in urls]
+     if response['has_more']:assert new, 'Chapter pagination made no progress'
+     urls+=new;seen+=len(new);pages+=1
+     if not response['has_more']:break
+     time.sleep(.25)
+    else:raise AssertionError('Incomplete volume pagination')
+    label=volume.get('label','')
+    if label not in ('','بدون مجلدات','بدون مجلد','الفصول'):volume_counts[label]=seen
+  assert urls
+  result.update(chapters=True,chapterCount=len(set(urls)),chapterPages=pages,completeIndex=True,volumes=volume_counts);chapter=urls[0]
  result['checking']='text';d=html(chapter);styles=[s.decode_contents() for s in d.select('style')];container=d.select_one(rules['text']);assert container is not None
  for node in container.select('script,style,iframe,form,nav,.d-none,.sr-only,[hidden],[aria-hidden=true]'):node.decompose()
  for style in styles:
@@ -62,9 +91,14 @@ def probe(domain,result):
  result.pop('checking',None)
  return result
 if __name__=='__main__':
+ import argparse
+ parser=argparse.ArgumentParser();parser.add_argument('--bundle',type=Path);args=parser.parse_args()
+ candidate=validate(json.loads(args.bundle.read_text())) if args.bundle else build(2)
+ CONFIG={x['domain']:x['selectors'] for x in candidate['sources']}
+ digest=hashlib.sha256(json.dumps(candidate,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
  report=[]
  for domain in SAMPLES:
-  result={}
+  result={'rulesSha256':digest}
   try:probe(domain,result)
   except Exception as error:
    result.update(healthy=False,failedStage=result.pop('checking','unknown'),error=type(error).__name__)

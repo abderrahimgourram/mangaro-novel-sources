@@ -8,6 +8,7 @@
     "detailsTitle": "h1.entry-title",
     "detailsCover": ".sertothumb img",
     "description": ".sersys[itemprop=description]",
-    "text": "#kol_content"
+    "text": "#kol_content",
+    "originalTitle": ".alter"
   }
 }

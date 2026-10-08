@@ -6,6 +6,7 @@
     "detailsTitle": "h1.nhv-novel-title",
     "detailsCover": ".nhv-novel-cover img",
     "description": ".nhv-novel-synopsis",
-    "text": ".reading-content"
+    "text": ".reading-content",
+    "originalTitle": ".nhv-novel-kicker"
   }
 }
