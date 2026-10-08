@@ -1,0 +1,19 @@
+name: SeaNovel diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect SeaNovel response
+        run: |
+          curl -sS --max-time 20 \
+            -D - -o /dev/null \
+            -A "MangaroNovelPrototype/0.1" \
+            "https://seanovel.org/api/novels?sort=views" \
+            | grep -Ei '^(HTTP/|server:|cf-ray:|content-type:|location:|retry-after:|www-authenticate:)'
