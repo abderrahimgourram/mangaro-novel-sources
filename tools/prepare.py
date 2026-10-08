@@ -2,13 +2,13 @@
 """Rollback re-signs verified old selectors at a NEW, increasing revision."""
 import argparse,json
 from validate import ROOT,build,validate,require
-from verify import verify_pair,verify_envelope
+from verify import verify_pair,verify_envelope,manifest_bytes
 
 def prepare(revision,rollback=0):
  prior=ROOT/'published/manifest.json'
  current=0
  if prior.exists():
-  data=json.loads(prior.read_bytes())
+  data=json.loads(prior.read_bytes());manifest_bytes(data)
   bundle=verify_pair(prior.read_bytes(),(ROOT/'published'/f"rules-{data['revision']}.json").read_bytes())
   current=bundle['revision']
  require(revision>current,'Revision must be greater than the published last-known-good revision')

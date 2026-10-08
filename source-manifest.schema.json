@@ -11,13 +11,15 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": 1
+      "const": 1,
+      "type": "integer"
     },
     "engineVersion": {
       "enum": [
         1,
         2
-      ]
+      ],
+      "type": "integer"
     },
     "revision": {
       "type": "integer",
@@ -117,8 +119,112 @@
               }
             }
           }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "id": {
+                "const": "novel.kolnovel"
+              },
+              "domain": {
+                "const": "kolnovel.com"
+              }
+            }
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "novel.cenele"
+              },
+              "domain": {
+                "const": "cenele.com"
+              }
+            }
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "novel.sunovels"
+              },
+              "domain": {
+                "const": "sunovels.com"
+              }
+            }
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "novel.seanovel"
+              },
+              "domain": {
+                "const": "seanovel.org"
+              }
+            }
+          }
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "const": "novel.kolnovel"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "const": "novel.cenele"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "const": "novel.sunovels"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "const": "novel.seanovel"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
         }
-      }
+      ]
     }
   }
 }

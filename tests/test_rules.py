@@ -62,5 +62,23 @@ class RuleSecurityTest(unittest.TestCase):
   for mutation in [lambda x:x[0].update(text=False),lambda x:x[0].update(rulesSha256='0'*64),lambda x:x.pop(),lambda x:x[1].update(domain=x[0]['domain'])]:
    bad=copy.deepcopy(report);mutation(bad)
    with self.assertRaises(ValueError):require_health(bad,bundle)
+ def test_loading_placeholder_is_not_successful_chapter_text(self):
+  import health
+  from bs4 import BeautifulSoup
+  from types import SimpleNamespace
+  def public_response(url,data=None):
+   value=[{'title_ar':'تيرا'}] if '/api/novels?' in url else {'description':'Test metadata','chapters':[{'id':1}]}
+   return SimpleNamespace(json=lambda:value)
+  result={}
+  with patch('health.fetch',public_response),patch('health.html',return_value=BeautifulSoup('<article class="reader-content"><p>Loading</p></article>','html.parser')):
+   with self.assertRaises(ValueError):health.probe('seanovel.org',result)
+  self.assertTrue(result['chapters'])
+  self.assertFalse(result['text'])
+ def test_health_cannot_request_foreign_domains_or_credentials(self):
+  import health
+  with patch.object(health.SESSION,'get') as network:
+   for url in ['https://evil.test/','http://seanovel.org/','https://user:password@seanovel.org/','https://seanovel.org:8443/']:
+    with self.assertRaises(ValueError):health.fetch(url)
+   network.assert_not_called()
 
 if __name__=='__main__':unittest.main()

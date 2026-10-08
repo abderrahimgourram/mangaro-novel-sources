@@ -3,6 +3,12 @@ on:
   schedule:
     - cron: '21 4 * * *'
   workflow_dispatch:
+    inputs:
+      source:
+        description: One source for a focused diagnosis, or all for the daily acceptance check
+        type: choice
+        default: all
+        options: [all, kolnovel.com, cenele.com, sunovels.com, seanovel.org]
   push:
     branches: [main]
     paths: ['rules/**', 'tools/**', 'tests/**', '*.json', 'requirements.txt', '.github/workflows/**']
@@ -38,7 +44,9 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - name: Check the live four-source journey without retaining content
-        run: python tools/health.py
+        run: python tools/health.py --source "$HEALTH_SOURCE"
+        env:
+          HEALTH_SOURCE: ${{ inputs.source || 'all' }}
       - name: Write source status summary
         if: always()
         run: python tools/report.py
