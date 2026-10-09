@@ -4,10 +4,6 @@ on:
     - cron: '21 4 * * *'
   workflow_dispatch:
     inputs:
-      minimal_validation:
-        description: Validate schema only without running test suites
-        type: boolean
-        default: false
       source:
         description: One source for a focused diagnosis, or all for the daily acceptance check
         type: choice
@@ -33,14 +29,13 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python tools/validate.py --revision 2
-      - if: github.event_name != 'workflow_dispatch' || !inputs.minimal_validation
-        run: python -m unittest discover -s tests -v
+      - run: python -m unittest discover -s tests -v
   inspect:
     if: >-
       (github.event_name == 'schedule' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' &&
         (github.ref == 'refs/heads/main' ||
-         (github.ref == 'refs/heads/feature/seanovel-attestation-20261009' && inputs.source == 'seanovel.org')))
+         (github.ref == 'refs/heads/feature/seanovel-attestation-20261009' && (inputs.source == 'seanovel.org' || inputs.source == 'all'))))
     environment: novel-health
     needs: validate
     runs-on: ubuntu-latest

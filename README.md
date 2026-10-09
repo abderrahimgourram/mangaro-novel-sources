@@ -4,7 +4,23 @@ Independent declarative rules for **exactly four identities**: `novel.kolnovel` 
 
 ## Activation status
 
-The repository and daily/manual monitoring are operational. The first reviewed publication is **blocked**: SeaNovel's catalog request returns HTTP 403 from GitHub-hosted runners, although the same five-operation local probe succeeds. Runs [health](https://github.com/abderrahimgourram/mangaro-novel-sources/actions/runs/37855581178) and [publication](https://github.com/abderrahimgourram/mangaro-novel-sources/actions/runs/37855887763) retain the reports. Signing and publishing steps were skipped; no production feed/release was activated. Android's `PUBLIC_PIPELINE_APPROVED` remains false. The public signed test fixtures verify against the Android-pinned key; they are not the production feed. Resolve the provider's normal CI access before retrying reviewed publication; do not bypass its restrictions.
+On 2026-10-09, SeaNovel passed an GitHub-initiated authenticated Vercel
+health check with `attestationVerified=True` and all five stages
+(catalog, search, details, chapters, text) reporting success.
+
+SeaNovel search in Android filters the fetched catalog locally by
+title. The current health check verifies a known matching title,
+not a separate server-side search endpoint or complete pagination.
+
+Direct access from GitHub-hosted runners previously returned
+HTTP 403. The authenticated Vercel checker provides an independent
+health signal; it does not establish that Android devices can
+access SeaNovel directly.
+
+The reviewed production rules feed has not been activated.
+Android `PUBLIC_PIPELINE_APPROVED` remains false.
+No production novel-rules publication or Android APK release
+is authorized by these diagnostic results.
 
 ## Validation and monitoring
 
