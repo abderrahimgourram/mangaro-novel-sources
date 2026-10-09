@@ -4,7 +4,7 @@ Independent declarative rules for **exactly four identities**: `novel.kolnovel` 
 
 ## Activation status
 
-On 2026-10-09, SeaNovel passed an GitHub-initiated authenticated Vercel
+On 2026-10-09, SeaNovel passed a GitHub-initiated authenticated Vercel
 health check with `attestationVerified=True` and all five stages
 (catalog, search, details, chapters, text) reporting success.
 

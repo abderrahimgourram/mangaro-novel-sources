@@ -31,11 +31,7 @@ jobs:
       - run: python tools/validate.py --revision 2
       - run: python -m unittest discover -s tests -v
   inspect:
-    if: >-
-      (github.event_name == 'schedule' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' &&
-        (github.ref == 'refs/heads/main' ||
-         (github.ref == 'refs/heads/feature/seanovel-attestation-20261009' && (inputs.source == 'seanovel.org' || inputs.source == 'all'))))
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     environment: novel-health
     needs: validate
     runs-on: ubuntu-latest
