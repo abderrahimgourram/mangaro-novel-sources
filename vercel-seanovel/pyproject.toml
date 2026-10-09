@@ -1,0 +1,8 @@
+[project]
+name = "mangaro-seanovel-check"
+version = "0.2.0"
+requires-python = ">=3.12"
+dependencies = ["requests==2.32.5", "beautifulsoup4==4.14.3", "html5lib==1.1"]
+
+[tool.vercel]
+entrypoint = "api.probe:handler"

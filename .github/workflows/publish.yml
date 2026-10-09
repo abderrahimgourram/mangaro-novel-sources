@@ -46,6 +46,8 @@ jobs:
           python tools/prepare.py --revision "$RULE_REVISION" --rollback "$ROLLBACK_REVISION"
       - name: Health-check the exact candidate before accessing the signing key
         run: python tools/health.py --bundle bundle.json
+        env:
+          SEANOVEL_ATTESTATION_SECRET: ${{ secrets.SEANOVEL_ATTESTATION_SECRET }}
       - name: Sign only after every probe passes
         env:
           RULE_SIGNING_KEY: ${{ secrets.NOVEL_RULE_SIGNING_KEY }}
