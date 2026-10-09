@@ -146,9 +146,14 @@ if __name__ == '__main__':
     for domain in SAMPLES:
         if args.source != 'all' and domain != args.source:
             continue
-        result = {'rulesSha256': digest}
+        result = {'domain':domain,'rulesSha256': digest}
         try:
-            probe(domain, result)
+            if domain == 'seanovel.org':
+                from sea_attestation import check
+                result['checking']='attestation'
+                result=check(candidate)
+            else:
+                probe(domain, result)
         except Exception as error:
             result.update(healthy=False, failedStage=result.pop('checking', 'unknown'), error=type(error).__name__)
             response = getattr(error, 'response', None)
