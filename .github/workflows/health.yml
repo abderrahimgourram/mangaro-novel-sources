@@ -1,11 +1,11 @@
 name: Novel source health
 on:
   schedule:
-    - cron: '21 4 * * *'
+    - cron: '21 4,10,16,22 * * *'
   workflow_dispatch:
     inputs:
       source:
-        description: One source for a focused diagnosis, or all for the daily acceptance check
+        description: One source for a focused diagnosis, or all for the scheduled acceptance check
         type: choice
         default: all
         options: [all, kolnovel.com, cenele.com, sunovels.com, seanovel.org]
