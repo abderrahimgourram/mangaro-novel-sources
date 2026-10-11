@@ -211,3 +211,29 @@ Disposable signed fixtures test the real consumers but cannot verify against the
 key. Actual pinned-key signing/staging must run in the existing authorized CI environment
 after approval to commit/push these changes. No new CURRENT, LAST-GOOD or receipt is minted
 from these fixtures. Genesis alone cannot enable rollback or automatic publication.
+
+## Explicit real genesis acceptance
+
+`publish.yml` can restore a successful main staging run through `staging_run`.
+It authenticates the run, workflow, actor, pinned signatures and exact reviewed
+three-source payload, then independently repeats all included-source acceptance.
+`native_evidence` is explicitly **owner-attested local Android emulator evidence**:
+it binds the consumer commit, exact manifest/envelope/key hashes, test-log hash,
+platform and fresh successful result. It does not claim Android executed on GitHub.
+Only the repository owner on main may make this one-time attestation. No private
+key is exported to Android or to the local machine. An independently signed receipt
+is issued in the existing protected signing environment only after these gates.
+
+With `stage_only=true`, no production state is written. With explicit genesis
+publication, a new authenticated journal reservation is created atomically on
+`source-operations-state`; existing authenticated state is never overwritten.
+Immutable Release assets and their exact public Git path are verified before CURRENT
+advances. An interrupted reservation can reuse only byte-identical signed assets.
+The final journal records authentic CURRENT, closes source approval gates, and
+contains no invented previous revision. Automatic publication and rollback remain
+disabled until real earlier publication history and source-specific gates exist.
+
+Kolnovel's full acceptance checks all published chapter metadata with four bounded
+requests at a time, preserving the original 600-request/300-second acceptance
+budget, canonical identity, owner, complete navigation graph and repeated-index
+checks. Routine monitoring does not traverse that graph.

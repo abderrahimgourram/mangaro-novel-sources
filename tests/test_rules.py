@@ -113,7 +113,10 @@ class RuleSecurityTest(unittest.TestCase):
    self.assertFalse((root/'published').exists())
  def test_stage_only_workflow_defaults_to_no_production_writes(self):
   workflow=(ROOT/'.github/workflows/publish.yml').read_text()
-  self.assertIn('stage_only:',workflow);self.assertIn('if: ${{ !inputs.stage_only }}',workflow)
+  self.assertIn('stage_only:',workflow)
+  for command in ['run: python tools/publish.py','run: python tools/genesis.py publish']:
+   block=workflow[:workflow.index(command)].rsplit('      - name:',1)[-1]
+   self.assertIn('!inputs.stage_only',block)
   self.assertIn('--initial-release',workflow)
  def test_broken_candidate_cannot_be_packaged(self):
   from package import package
