@@ -57,9 +57,9 @@ class RuleSecurityTest(unittest.TestCase):
   with self.assertRaises(ValueError):package(candidate,Path('/nonexistent-key'))
  def test_failed_or_stale_health_cannot_authorize_signing(self):
   bundle=build(2);digest=hashlib.sha256(json.dumps(bundle,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
-  report=[dict(domain=domain,rulesSha256=digest,catalog=True,search=True,details=True,chapters=True,text=True) for domain in DOMAINS.values()]
+  report=[dict(domain=domain,rulesSha256=digest,catalog=True,search=True,details=True,chapters=True,text=True,completeIndex=True,attestationVerified=True) for domain in DOMAINS.values()]
   require_health(report,bundle)
-  for mutation in [lambda x:x[0].update(text=False),lambda x:x[0].update(rulesSha256='0'*64),lambda x:x.pop(),lambda x:x[1].update(domain=x[0]['domain'])]:
+  for mutation in [lambda x:x[0].update(text=False),lambda x:x[0].update(completeIndex=False),lambda x:x[3].update(attestationVerified=False),lambda x:x[0].update(rulesSha256='0'*64),lambda x:x.pop(),lambda x:x[1].update(domain=x[0]['domain'])]:
    bad=copy.deepcopy(report);mutation(bad)
    with self.assertRaises(ValueError):require_health(bad,bundle)
  def test_loading_placeholder_is_not_successful_chapter_text(self):
