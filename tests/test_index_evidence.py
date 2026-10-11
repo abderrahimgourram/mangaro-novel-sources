@@ -61,13 +61,14 @@ class IndexEvidenceTest(unittest.TestCase):
             time.sleep(.01)
             with lock:active-=1
             self.assertEqual(worker.remaining,1)
+            self.assertEqual(worker.deadline,client.deadline)
             return url
         client=Client('kolnovel.com',True,True)
         try:
             urls=[chapter(i) for i in range(7)]
             with patch.object(Client,'chapter_metadata',read):
                 self.assertEqual(list(client.chapter_metadata_batch(urls)),urls)
-                self.assertLessEqual(peak,2);self.assertGreaterEqual(peak,1)
+                self.assertLessEqual(peak,4);self.assertGreaterEqual(peak,1)
                 self.assertEqual(client.remaining,593)
                 client.remaining=1
                 with self.assertRaisesRegex(Exception,'PROBE_BUDGET_EXHAUSTED'):

@@ -199,6 +199,19 @@ class GitJournal:
         require(state.get('repository') == self.repository and state.get('purpose') == 'SOURCE_OPERATIONS_V1', 'OPERATION_HISTORY_SCOPE_MISMATCH')
         return state
 
+    def initialize(self, state):
+        """Create a genuine signed genesis reservation, never a fictitious prior release."""
+        require(self.head is None and self.tree is None, 'JOURNAL_ALREADY_LOADED')
+        require(state.get('repository') == self.repository and state.get('purpose') == 'SOURCE_OPERATIONS_V1', 'OPERATION_HISTORY_SCOPE_MISMATCH')
+        require(state.get('sources') == {} and state.get('pendingGenesis') and not state.get('genesis'), 'GENESIS_RESERVATION_REQUIRED')
+        prefix = 'repos/'+self.repository+'/git/'
+        blob = self.api('POST', prefix+'blobs', {'content': json.dumps(self.seal(state), separators=(',', ':')), 'encoding': 'utf-8'})
+        tree = self.api('POST', prefix+'trees', {'tree': [{'path': 'journal.json', 'mode': '100644', 'type': 'blob', 'sha': blob['sha']}]})
+        commit = self.api('POST', prefix+'commits', {'message': 'source operations: explicit genesis reservation', 'tree': tree['sha'], 'parents': []})
+        # Atomic ref creation fails if a concurrent initializer already created it.
+        self.api('POST', prefix+'refs', {'ref': 'refs/heads/'+self.branch, 'sha': commit['sha']})
+        self.head, self.tree = commit['sha'], tree['sha']
+
     def write(self, state):
         require(self.head and self.tree, 'NO_AUTHENTICATED_JOURNAL_PARENT')
         require(state.get('repository') == self.repository and state.get('purpose') == 'SOURCE_OPERATIONS_V1', 'OPERATION_HISTORY_SCOPE_MISMATCH')

@@ -63,7 +63,7 @@ def require_health(report,bundle,*,current=None,source=None):
  require(isinstance(report,list) and len(report)==len(required) and {row.get('domain') for row in report}==required,'Incomplete health report')
  require(all(row.get('rulesSha256')==digest and row.get('completeIndex') is True and (row.get('domain')!='seanovel.org' or row.get('attestationVerified') is True) and all(row.get(x) is True for x in ('catalog','search','details','chapters','text')) for row in report),'Candidate did not pass all live checks')
 
-def require_staging(proof,bundle,source=None):
+def require_staging(proof,bundle,source=None,*,manifest=None,envelope=None):
  """Publication authority is an independent signed receipt, never monitoring output."""
  import base64,time
  from verify import verify_signature
@@ -79,6 +79,10 @@ def require_staging(proof,bundle,source=None):
  stamp=receipt.get('verifiedAt');require(type(stamp) is int and 0<=time.time()-stamp<=3600,'Staging receipt expired')
  require(receipt.get('producerRun') and receipt.get('independentRun') and receipt['producerRun']!=receipt['independentRun'],'Independent staging required')
  require(all(receipt.get(k) is True for k in ('accepted','independent','runtimeVerified')),'Staging not accepted')
+ if manifest is not None or envelope is not None:
+  import hashlib
+  require(isinstance(manifest,bytes) and isinstance(envelope,bytes),'Exact staged bytes required')
+  require(receipt.get('manifestSha256')==hashlib.sha256(manifest).hexdigest() and receipt.get('envelopeSha256')==hashlib.sha256(envelope).hexdigest(),'Staging artifact bytes mismatch')
  return receipt
 if __name__=='__main__':
  import argparse

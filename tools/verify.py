@@ -39,21 +39,28 @@ def verify_pair(manifest_raw,envelope,key=ROOT/'keys/rules-public.der'):
  require(bundle['schemaVersion']==manifest['schemaVersion'] and bundle['revision']==manifest['revision'] and bundle['engineVersion']==manifest['engineVersion'],'Manifest/payload mismatch')
  return bundle
 
-def verify_public_feed(expected_manifest,expected_envelope):
- """Verify exactly the public feed consumed by Android after the atomic Git update."""
+def read_public(path,limit):
  import requests
  base='https://raw.githubusercontent.com/abderrahimgourram/mangaro-novel-sources/main/'
- def read(path,limit):
-  with requests.get(base+path,timeout=(5,10),allow_redirects=False,stream=True,headers={'Cache-Control':'no-cache'}) as response:
-   require(response.status_code==200,'Public rule asset unavailable')
-   body=bytearray()
-   for chunk in response.iter_content(8192):
-    body.extend(chunk);require(len(body)<=limit,'Public rule asset oversized')
-   return bytes(body)
+ with requests.get(base+path,timeout=(5,10),allow_redirects=False,stream=True,headers={'Cache-Control':'no-cache'}) as response:
+  require(response.status_code==200,'Public rule asset unavailable')
+  body=bytearray()
+  for chunk in response.iter_content(8192):
+   body.extend(chunk);require(len(body)<=limit,'Public rule asset oversized')
+  return bytes(body)
+
+def verify_public_envelope(expected_manifest,expected_envelope):
  expected=json.loads(expected_manifest);manifest_bytes(expected)
- manifest=read('published/'+('v2/' if expected['schemaVersion']==2 else '')+'manifest.json',8192)
+ envelope=read_public(expected['envelopePath'],96*1024)
+ require(envelope==expected_envelope,'Public immutable envelope mismatch')
+ return verify_pair(expected_manifest,envelope)
+
+def verify_public_feed(expected_manifest,expected_envelope):
+ """Verify exactly the public feed consumed by Android after the atomic Git update."""
+ expected=json.loads(expected_manifest);manifest_bytes(expected)
+ manifest=read_public('published/'+('v2/' if expected['schemaVersion']==2 else '')+'manifest.json',8192)
  data=json.loads(manifest);manifest_bytes(data)
- envelope=read(data['envelopePath'],96*1024)
+ envelope=read_public(data['envelopePath'],96*1024)
  bundle=verify_pair(manifest,envelope)
  require(manifest==expected_manifest and envelope==expected_envelope,'Public feed does not match published revision')
  return bundle
@@ -64,4 +71,4 @@ if __name__=='__main__':
  data=json.loads(manifest)
  manifest_bytes(data) # Validate path before local file access.
  bundle=verify_pair(manifest,(args.directory/Path(data['envelopePath']).name).read_bytes())
- print('Verified signed manifest and four-source envelope; engine',bundle['engineVersion'],'revision',bundle['revision'])
+ print('Verified signed manifest; included sources',len(bundle['sources']),'mode',bundle.get('mode','FULL'),'engine',bundle['engineVersion'],'revision',bundle['revision'])

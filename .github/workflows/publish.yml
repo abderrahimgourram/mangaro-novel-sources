@@ -18,6 +18,14 @@ on:
         description: Optional changed domain; requires authenticated CURRENT and exact preservation of all other mappings
         type: string
         default: ''
+      staging_run:
+        description: Successful main staging run for explicit genesis acceptance (0 prepares a candidate)
+        type: number
+        default: 0
+      native_evidence:
+        description: Owner-attested local Android acceptance JSON bound to the exact staging bytes
+        type: string
+        default: ''
       initial_release:
         description: Explicitly prepare the first CURRENT; no previous release or rollback authority
         type: boolean
@@ -43,6 +51,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.reviewed && github.ref == 'refs/heads/main'
     permissions:
       contents: write
+      actions: read
     environment: reviewed-novel-rules
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -52,6 +61,8 @@ jobs:
       INITIAL_RELEASE: ${{ inputs.initial_release }}
       RULE_SOURCES: ${{ inputs.sources }}
       PUBLICATION_SOURCE: ${{ inputs.publication_source }}
+      STAGING_RUN: ${{ inputs.staging_run }}
+      NATIVE_EVIDENCE: ${{ inputs.native_evidence }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -66,10 +77,16 @@ jobs:
       - name: Validate compatibility, increasing revision and optional rollback
         run: |
           python -m unittest discover -s tests -v
+          if [ "$STAGING_RUN" != 0 ]; then exit 0; fi
           initial_args=()
           if [ "$INITIAL_RELEASE" = true ]; then initial_args+=(--initial-release); fi
           if [ -n "$RULE_SOURCES" ]; then initial_args+=(--sources "$RULE_SOURCES"); fi
           python tools/prepare.py --revision "$RULE_REVISION" --rollback "$ROLLBACK_REVISION" "${initial_args[@]}"
+      - name: Restore authenticated staging and explicit native byte bindings
+        if: inputs.staging_run != 0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/genesis.py restore
       - name: Health-check the exact candidate before accessing the signing key
         run: |
           health_args=()
@@ -86,14 +103,24 @@ jobs:
           umask 077
           test -n "$RULE_SIGNING_KEY"
           printf '%s' "$RULE_SIGNING_KEY" > "$key_file"
-          NOVEL_RULE_SIGNING_KEY_FILE="$key_file" python tools/package.py
+          if [ "$STAGING_RUN" = 0 ]; then
+            NOVEL_RULE_SIGNING_KEY_FILE="$key_file" python tools/package.py
+          else
+            python tools/genesis.py accept
+          fi
       - name: Verify both signatures and hash/version bindings
         run: python tools/verify.py
       - name: Publish immutable assets, then advance the CURRENT feed
-        if: ${{ !inputs.stage_only }}
+        if: ${{ !inputs.stage_only && inputs.staging_run == 0 }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: python tools/publish.py
+      - name: Publish explicit accepted genesis and authentic CURRENT journal
+        if: ${{ !inputs.stage_only && inputs.staging_run != 0 }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RULE_SIGNING_KEY: ${{ secrets.NOVEL_RULE_SIGNING_KEY }}
+        run: python tools/genesis.py publish
       - name: Retain exact verified staging bytes without publication
         if: inputs.stage_only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -102,6 +129,7 @@ jobs:
           path: |
             staging/manifest.json
             staging/rules-${{ inputs.revision }}.json
+            staging/acceptance.json
           if-no-files-found: error
           retention-days: 7
       - name: Write source status summary

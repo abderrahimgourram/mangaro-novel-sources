@@ -92,10 +92,10 @@ class Client:
             worker.remaining=1;worker.deadline=self.deadline
             try:return worker.chapter_metadata(url)
             finally:worker.close()
-        # Two requests and two independent sessions at most; never queue the whole book.
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            for start in range(0,len(urls),2):
-                batch=[pool.submit(read,u) for u in urls[start:start+2]]
+        # Four bounded metadata requests; keep the same deadline, request/body limits and proofs.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for start in range(0,len(urls),4):
+                batch=[pool.submit(read,u) for u in urls[start:start+4]]
                 for future in batch:yield future.result()
     def close(self):
         self.session.close()
