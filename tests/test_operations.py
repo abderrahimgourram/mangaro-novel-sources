@@ -170,4 +170,27 @@ class OperationsTest(unittest.TestCase):
                 result=operation_adapter.readiness()
             self.assertEqual(result['eligible'],expected)
 
+class PublishedContentEncodingTest(unittest.TestCase):
+    def test_github_wrapped_base64_retains_exact_signed_v2_bytes(self):
+        import base64,json
+        from unittest.mock import patch
+        import operation_adapter
+        fixture=HERE/'fixtures/partial'
+        manifest=(fixture/'three-manifest.json').read_bytes()
+        envelope=(fixture/'three-envelope.json').read_bytes()
+        responses=[{'encoding':'base64','content':base64.encodebytes(raw).decode()} for raw in [manifest,envelope]]
+        with patch.object(operation_adapter,'api',side_effect=responses):
+            _,_,fetch,_,_=operation_adapter.configuration()
+            pair=fetch('cenele.com')
+        self.assertEqual(base64.b64decode(pair['manifest']),manifest)
+        self.assertEqual(base64.b64decode(pair['envelope']),envelope)
+
+    def test_malformed_encoding_is_rejected(self):
+        from unittest.mock import patch
+        import operation_adapter
+        for response in [{'encoding':'utf-8','content':'e30='},{'encoding':'base64','content':'!!!'}]:
+            with patch.object(operation_adapter,'api',return_value=response):
+                _,_,fetch,_,_=operation_adapter.configuration()
+                with self.assertRaises((ValueError,OperationBlocked)):fetch('cenele.com')
+
 if __name__=='__main__':unittest.main()

@@ -44,7 +44,10 @@ def configuration():
     def fetch(source):
         def content(path,optional=False):
             item=api('GET',f'repos/{REPOSITORY}/contents/{path}?ref=main',allow_missing=optional)
-            return base64.b64decode(item['content'],validate=True) if item is not None else None
+            # GitHub's Contents API wraps Base64 at 60 columns; decoded bytes still require signatures.
+            if item is None:return None
+            require(item.get('encoding')=='base64','UNEXPECTED_CONTENT_ENCODING')
+            return base64.b64decode(''.join(item['content'].split()),validate=True)
         manifest=content('published/v2/manifest.json',True)
         if manifest is None:manifest=content('published/manifest.json')
         data=json.loads(manifest)
