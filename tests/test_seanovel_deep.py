@@ -32,6 +32,12 @@ class DeepAttestationTest(unittest.TestCase):
  def tearDown(self):self.check.stop();self.url.stop();self.env.stop();Handler.tamper=None
  def test_v2_verifies_full_index(self):
   r=client.check(build(2),deep=True);self.assertTrue(r['attestationVerified']);self.assertTrue(r['completeIndex'])
+ def test_v2_binds_exact_partial_candidate_without_legacy_projection(self):
+  candidate=build(3,['novel.kolnovel','novel.cenele','novel.seanovel'])
+  r=client.check(candidate,deep=True)
+  digest=hashlib.sha256(json.dumps(candidate,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+  self.assertEqual(r['rulesSha256'],digest);self.assertEqual(r['revision'],3)
+  self.assertTrue(r['attestationVerified']);self.assertTrue(r['completeIndex'])
  def test_fresh_signed_missing_completeness_is_rejected(self):
   Handler.tamper=staticmethod(lambda p:p['result'].update(completeIndex=False))
   with self.assertRaises(ValueError):client.check(build(2),deep=True)

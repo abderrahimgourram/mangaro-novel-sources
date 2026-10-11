@@ -11,6 +11,10 @@ on:
         description: Optional staged deployment of the existing SeaNovel project
         type: string
         default: ''
+      partial:
+        description: Also verify exact schema-2 partial candidate compatibility; no publication
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -53,6 +57,12 @@ jobs:
           SEANOVEL_ATTESTATION_SECRET: ${{ secrets.SEANOVEL_ATTESTATION_SECRET }}
           STAGED_DEPLOYMENT: ${{ inputs.deployment }}
         run: python tools/sea_attestation.py --deep --deployment "$STAGED_DEPLOYMENT"
+      - name: Verify exact signed partial candidate without legacy projection
+        if: inputs.partial
+        env:
+          SEANOVEL_ATTESTATION_SECRET: ${{ secrets.SEANOVEL_ATTESTATION_SECRET }}
+          STAGED_DEPLOYMENT: ${{ inputs.deployment }}
+        run: python tools/sea_attestation.py --deep --sources novel.kolnovel,novel.cenele,novel.seanovel --deployment "$STAGED_DEPLOYMENT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

@@ -175,3 +175,39 @@ invented URLs. A disabled next-page control is not a continuation. Until the ups
 publishes distinct stable paths or another genuinely verified identity mechanism is
 supported, this source and all-source genesis acceptance remain blocked. No selector
 change can recover two different chapter bodies from the same ambiguous URL.
+
+## Versioned partial updates (implementation only; production disabled)
+
+Legacy schema 1/engines 1–2 still mean exactly four sources. Schema 2/engine 3 adds a
+mandatory `mode`: `PARTIAL` allows 1–4 unique registered replacements; `FULL` requires
+all four. Whole source mappings replace previous mappings; selectors are never merged
+field by field. Absent sources remain bundled or previously authenticated in Android.
+Signatures still use the pinned ECDSA key, with the versioned manifest domain separator
+`MangaroNovelManifestV2`. Both hashes and schema/engine/revision/path bindings are checked.
+The new feed is `published/v2/manifest.json` and its immutable envelopes live alongside
+it. Legacy files and release tags are independent; old apps keep their original feed.
+Android retains at most four complete signed packages needed for current replacements,
+with an atomic current/previous cache, global revision floor and shared installation lock.
+Neither merged selector maps nor monitoring results become signature authority.
+
+For isolated first staging, pass `initial_release=true`, `stage_only=true` and
+`sources=novel.kolnovel,novel.cenele,novel.seanovel`. Initialization creates no historical
+revision or rollback claim. Every included mapping must pass actual acceptance. Subsequent
+partial preparations retain authenticated, unselected published mappings. For a single
+changed domain, `publication_source` allows source-scoped health/signing only against
+authenticated CURRENT and exact preservation of every other mapping. Partial production
+publication additionally requires a fresh, independently signed `staging/acceptance.json`
+bound to candidate hash, revision, repository, included/changed domains and distinct CI
+runs. Existing operation journals supply this proof; absence or mismatch blocks writes.
+
+The local SeaNovel candidate validator accepts the explicit new shape; HMAC protocol v2,
+request/response bytes, secrets, digest, revision, nonce, expiry and full-index verification
+are unchanged. There is no legacy projection or substituted digest. This compatibility
+extension has NOT been deployed. Authenticated partial attestation requires a separately
+approved deployment of that small validator change; existing live legacy attestation stays
+intact. No public key, production variable or Android approval flag has been changed.
+
+Disposable signed fixtures test the real consumers but cannot verify against the production
+key. Actual pinned-key signing/staging must run in the existing authorized CI environment
+after approval to commit/push these changes. No new CURRENT, LAST-GOOD or receipt is minted
+from these fixtures. Genesis alone cannot enable rollback or automatic publication.

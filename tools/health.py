@@ -141,6 +141,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     candidate = validate(json.loads(args.bundle.read_text())) if args.bundle else build(2)
     CONFIG = {x['domain']: x['selectors'] for x in candidate['sources']}
+    require(args.source=='all' or args.source in CONFIG,'Requested source absent from candidate')
     digest = hashlib.sha256(json.dumps(candidate, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
     report = []
     for source in candidate['sources']:

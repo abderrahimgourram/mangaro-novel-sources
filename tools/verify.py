@@ -13,13 +13,13 @@ def verify_signature(raw,encoded,key):
 
 def manifest_bytes(data):
  require(set(data)=={'schemaVersion','engineVersion','revision','envelopePath','sha256','signature'},'Invalid manifest schema')
- require(type(data['schemaVersion']) is int and data['schemaVersion']==1)
- require(type(data['engineVersion']) is int and data['engineVersion'] in (1,2),'Incompatible engine')
+ require(type(data['schemaVersion']) is int and data['schemaVersion'] in (1,2))
+ require(type(data['engineVersion']) is int and data['engineVersion'] in ((1,2) if data['schemaVersion']==1 else (3,)),'Incompatible engine')
  require(type(data['revision']) is int and 0<data['revision']<=2147483647)
- require(data['envelopePath']==f"published/rules-{data['revision']}.json",'Invalid envelope path')
+ require(data['envelopePath']==f"published/{'v2/' if data['schemaVersion']==2 else ''}rules-{data['revision']}.json",'Invalid envelope path')
  require(isinstance(data['sha256'],str) and re.fullmatch('[0-9a-f]{64}',data['sha256']))
  # Fixed ASCII-only, domain-separated protocol shared with Android: no JSON serialization ambiguity.
- return ('MangaroNovelManifestV1\n'+''.join(str(data[x])+'\n' for x in
+ return (f"MangaroNovelManifestV{data['schemaVersion']}\n"+''.join(str(data[x])+'\n' for x in
   ('schemaVersion','engineVersion','revision','envelopePath','sha256'))).encode('ascii')
 
 def verify_envelope(raw,key=ROOT/'keys/rules-public.der'):
@@ -36,7 +36,7 @@ def verify_pair(manifest_raw,envelope,key=ROOT/'keys/rules-public.der'):
  verify_signature(manifest_bytes(manifest),manifest['signature'],key)
  require(hashlib.sha256(envelope).hexdigest()==manifest['sha256'],'Invalid envelope hash')
  bundle=verify_envelope(envelope,key)
- require(bundle['revision']==manifest['revision'] and bundle['engineVersion']==manifest['engineVersion'],'Manifest/payload mismatch')
+ require(bundle['schemaVersion']==manifest['schemaVersion'] and bundle['revision']==manifest['revision'] and bundle['engineVersion']==manifest['engineVersion'],'Manifest/payload mismatch')
  return bundle
 
 def verify_public_feed(expected_manifest,expected_envelope):
@@ -50,7 +50,8 @@ def verify_public_feed(expected_manifest,expected_envelope):
    for chunk in response.iter_content(8192):
     body.extend(chunk);require(len(body)<=limit,'Public rule asset oversized')
    return bytes(body)
- manifest=read('published/manifest.json',8192)
+ expected=json.loads(expected_manifest);manifest_bytes(expected)
+ manifest=read('published/'+('v2/' if expected['schemaVersion']==2 else '')+'manifest.json',8192)
  data=json.loads(manifest);manifest_bytes(data)
  envelope=read(data['envelopePath'],96*1024)
  bundle=verify_pair(manifest,envelope)
