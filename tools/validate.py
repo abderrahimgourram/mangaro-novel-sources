@@ -34,10 +34,18 @@ def build(revision):
  return validate({'schemaVersion':1,'engineVersion':2,'revision':revision,'sources':[
   json.loads((ROOT/'rules'/(name+'.json')).read_text()) for name in DOMAINS]})
 
-def require_health(report,bundle):
+def require_health(report,bundle,*,current=None,source=None):
  import hashlib
  digest=hashlib.sha256(json.dumps(validate(bundle),ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
- require(isinstance(report,list) and len(report)==4 and {row.get('domain') for row in report}==set(DOMAINS.values()),'Incomplete health report')
+ required=set(DOMAINS.values())
+ if source is not None:
+  require(source in required and current is not None,'Authenticated current bundle required for source-scoped publication')
+  validate(current)
+  require(bundle['revision']>=current['revision'],'Revision decreased')
+  require({k:v for k,v in bundle.items() if k not in {'sources','revision'}}=={k:v for k,v in current.items() if k not in {'sources','revision'}},'Engine change requires full acceptance')
+  require([s for s in bundle['sources'] if s['domain']!=source]==[s for s in current['sources'] if s['domain']!=source],'Unrelated source changed')
+  required={source}
+ require(isinstance(report,list) and len(report)==len(required) and {row.get('domain') for row in report}==required,'Incomplete health report')
  require(all(row.get('rulesSha256')==digest and row.get('completeIndex') is True and (row.get('domain')!='seanovel.org' or row.get('attestationVerified') is True) and all(row.get(x) is True for x in ('catalog','search','details','chapters','text')) for row in report),'Candidate did not pass all live checks')
 if __name__=='__main__':
  import argparse

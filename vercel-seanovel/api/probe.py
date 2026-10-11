@@ -11,17 +11,22 @@ SLUG = "terra-nova-online-rise-of-the-strongest-player"
 URL = BASE + "/novels/" + SLUG
 MAX_BODY = 8 * 1024 * 1024
 
-def fetch(session, url):
+def fetch(session, url, deadline=None):
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != "seanovel.org" or parsed.port not in (None, 443) or parsed.username or parsed.password:
         raise ValueError("Unsafe target")
-    with session.get(url, timeout=(8, 20), allow_redirects=False, stream=True) as r:
+    remaining = 20 if deadline is None else min(20, deadline-time.monotonic())
+    if remaining <= 0:
+        raise TimeoutError("Verification budget exhausted")
+    with session.get(url, timeout=(8, remaining), allow_redirects=False, stream=True) as r:
         r.raise_for_status()
         content = bytearray()
         for chunk in r.iter_content(8192):
             content.extend(chunk)
             if len(content) > MAX_BODY:
                 raise ValueError("Response limit")
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("Verification budget exhausted")
         return bytes(content).decode(r.encoding or "utf-8", "replace")
 
 def run_checks(selectors=None):
@@ -84,11 +89,98 @@ def run_checks(selectors=None):
             result["upstream_http"]=response.status_code
     return result
 
+def run_deep_checks(selectors):
+    """Complete embedded index, official total, stable order and three real texts.
+
+    This API returns one full index, not continuation pages. If it advertises more
+    pages or omits its total, fail closed instead of guessing an endpoint/cursor.
+    """
+    result = {"domain": "seanovel.org", "status": "failed", "completeIndex": False,
+              "indexState": "INTERRUPTED", "verificationTier": "ATTESTED_COMPLETE_INDEX",
+              **{op: False for op in ("catalog", "search", "details", "chapters", "text")}}
+    stage = "catalog"
+    deadline = time.monotonic()+90
+    try:
+        with requests.Session() as session:
+            session.headers.update({"User-Agent": "MangaroNovelPrototype/0.1", "Accept": "text/html,application/json"})
+            def get(url): return fetch(session, url, deadline)
+            entries = json.loads(get(BASE+"/api/novels?sort=views"))
+            if not isinstance(entries, list) or not 0 < len(entries) <= 1000:
+                raise ValueError("Invalid catalog")
+            matches = [item for item in entries if isinstance(item, dict) and item.get("slug") == SLUG]
+            if len(matches) != 1 or not matches[0].get("title_ar") or "تيرا" not in matches[0]["title_ar"]:
+                raise ValueError("Catalog identity mismatch")
+            expected = matches[0]
+            result.update(catalog=True, search=True, catalog_count=len(entries))
+            stage = "details"
+            def index(raw):
+                item = json.loads(raw)
+                if not isinstance(item, dict) or item.get("slug") != SLUG or item.get("title_ar") != expected["title_ar"] or not item.get("description"):
+                    raise ValueError("Novel identity mismatch")
+                if expected.get("source_id") is not None and item.get("source_id") != expected["source_id"]:
+                    raise ValueError("Source identity mismatch")
+                if any(item.get(k) for k in ("has_more", "hasMore", "next", "next_page", "nextPage", "next_cursor")):
+                    raise ValueError("Unsupported chapter continuation")
+                total, chapters = item.get("chapters_count"), item.get("chapters")
+                if type(total) is not int or not 0 < total <= 100000 or not isinstance(chapters, list) or len(chapters) != total:
+                    raise ValueError("Official chapter total mismatch or unavailable")
+                if any(not isinstance(c, dict) or type(c.get("id")) is not int or c["id"] <= 0 or not isinstance(c.get("title"), str) or not c["title"].strip() for c in chapters):
+                    raise ValueError("Invalid chapter identity")
+                ids = [c["id"] for c in chapters]
+                if len(set(ids)) != len(ids) or ids != sorted(ids):
+                    raise ValueError("Duplicate or unordered chapters")
+                rows = [(c["id"], c["title"]) for c in chapters]
+                return total, rows
+            total, rows = index(get(BASE+"/api/novel/"+SLUG))
+            result.update(details=True, chapters=True, chapter_count=total, officialTotal=total,
+                          chapterPages=1, ordering="SOURCE_ID_ASCENDING")
+            stage = "text"
+            paragraphs_total = characters_total = 0
+            text_hashes = []
+            for position in sorted(set((0, len(rows)//2, len(rows)-1))):
+                chapter_url = URL+"/chapters/"+str(rows[position][0])
+                doc = BeautifulSoup(get(chapter_url), "html5lib")
+                canonical = doc.select_one('link[rel=canonical]')
+                if canonical is None or canonical.get("href", "").rstrip("/") != chapter_url:
+                    raise ValueError("Chapter ownership mismatch")
+                if doc.select('#challenge-form,#cf-wrapper,.challenge-running'):
+                    raise ValueError("Challenge HTML")
+                container = doc.select_one(selectors["text"])
+                if container is None: raise ValueError("Missing reader content")
+                for node in list(container.select('script,style,iframe,form,nav,.d-none,.sr-only,[hidden],[aria-hidden=true]')):
+                    node.decompose()
+                for style in doc.select("style"):
+                    for css, declarations in re.findall(r"([^{}]+)\{([^{}]+)\}", style.get_text()):
+                        if re.search(r"opacity\s*:\s*0(?:\.0+)?\s*(?:!important\s*)?(?:;|$)|display\s*:\s*none|visibility\s*:\s*hidden", declarations):
+                            for selector in css.split(','):
+                                if re.fullmatch(r"\.[a-zA-Z_][a-zA-Z0-9_-]*", selector.strip()):
+                                    for node in list(container.select(selector.strip())): node.decompose()
+                paragraphs = [p.get_text(' ', strip=True) for p in container.select('p') if p.get_text(strip=True)]
+                joined = '\n'.join(paragraphs)
+                if len(paragraphs) < 4 or len(joined) <= 500 or sum(c.isalpha() for c in joined) <= 250 or any(marker in joined.lower() for marker in ('verify you are human', 'cf-browser-verification', 'enable javascript and cookies')):
+                    raise ValueError("Invalid chapter text")
+                paragraphs_total += len(paragraphs); characters_total += len(joined)
+                text_hashes.append(hashlib.sha256(joined.encode()).hexdigest())
+            stage = "chapters"
+            if index(get(BASE+"/api/novel/"+SLUG)) != (total, rows):
+                raise ValueError("Index changed during verification")
+            result.update(status="healthy", completeIndex=True, indexState="COMPLETE", text=True,
+                          paragraphs=paragraphs_total, text_characters=characters_total, sampledTexts=len(text_hashes),
+                          sampleHashes=text_hashes, identityHash=hashlib.sha256(("seanovel.org:"+URL).encode()).hexdigest(),
+                          indexHash=hashlib.sha256(json.dumps(rows, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest())
+    except Exception as exc:
+        result.update(failed_stage=stage, error_type=type(exc).__name__)
+        response = getattr(exc, "response", None)
+        if response is not None:
+            result["upstream_http"] = response.status_code
+            if response.status_code in (403, 429): result["status"] = "blocked"
+    return result
+
 def candidate_request(raw):
     data=json.loads(raw)
     if set(data)!={'protocol','candidateSha256','revision','requestedAt','nonce','bundle'}:
         raise ValueError('Request schema')
-    if type(data['protocol']) is not int or data['protocol']!=1 or type(data['requestedAt']) is not int:
+    if type(data['protocol']) is not int or data['protocol'] not in (1,2) or type(data['requestedAt']) is not int:
         raise ValueError('Protocol')
     if not -5<=int(time.time())-data['requestedAt']<=120 or not isinstance(data['nonce'],str) or not re.fullmatch('[0-9a-f]{64}',data['nonce']):
         raise ValueError('Fresh request required')
@@ -133,18 +225,20 @@ class handler(BaseHTTPRequestHandler):
             length=int(self.headers.get('Content-Length','0'))
             if not 0<length<=96*1024:raise ValueError('Body limit')
             raw=self.rfile.read(length)
-            expected='HMAC-SHA256 '+hmac.new(key.encode(),b'request-v1\n'+raw,hashlib.sha256).hexdigest()
+            protocol=json.loads(raw).get('protocol')
+            if type(protocol) is not int or protocol not in (1,2): raise ValueError('Protocol')
+            expected='HMAC-SHA256 '+hmac.new(key.encode(),('request-v%d\n'%protocol).encode()+raw,hashlib.sha256).hexdigest()
             if not hmac.compare_digest(expected,self.headers.get('Authorization','')):
                 return self.reply(401,{'error':'Unauthorized'})
             data,selectors=candidate_request(raw)
         except Exception:
             return self.reply(400,{'error':'Invalid request'})
-        result=run_checks(selectors)
-        payload=json.dumps({'protocol':1,'candidateSha256':data['candidateSha256'],'revision':data['revision'],
+        result=run_checks(selectors) if protocol==1 else run_deep_checks(selectors)
+        payload=json.dumps({'protocol':protocol,'candidateSha256':data['candidateSha256'],'revision':data['revision'],
                             'requestedAt':data['requestedAt'],'nonce':data['nonce'],'timestamp':int(time.time()),'result':result},
                            ensure_ascii=True,separators=(',',':')).encode()
-        mac=hmac.new(key.encode(),b'response-v1\n'+payload,hashlib.sha256).hexdigest()
-        self.reply(200 if result['status']=='healthy' else 503,{'payload':base64.b64encode(payload).decode(),'signature':mac})
+        mac=hmac.new(key.encode(),('response-v%d\n'%protocol).encode()+payload,hashlib.sha256).hexdigest()
+        self.reply(200 if protocol==2 or result['status']=='healthy' else 503,{'payload':base64.b64encode(payload).decode(),'signature':mac})
 
     def reply(self,status,data):
         raw=json.dumps(data,separators=(',',':')).encode()

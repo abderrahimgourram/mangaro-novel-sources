@@ -39,6 +39,24 @@ def verify_pair(manifest_raw,envelope,key=ROOT/'keys/rules-public.der'):
  require(bundle['revision']==manifest['revision'] and bundle['engineVersion']==manifest['engineVersion'],'Manifest/payload mismatch')
  return bundle
 
+def verify_public_feed(expected_manifest,expected_envelope):
+ """Verify exactly the public feed consumed by Android after the atomic Git update."""
+ import requests
+ base='https://raw.githubusercontent.com/abderrahimgourram/mangaro-novel-sources/main/'
+ def read(path,limit):
+  with requests.get(base+path,timeout=(5,10),allow_redirects=False,stream=True,headers={'Cache-Control':'no-cache'}) as response:
+   require(response.status_code==200,'Public rule asset unavailable')
+   body=bytearray()
+   for chunk in response.iter_content(8192):
+    body.extend(chunk);require(len(body)<=limit,'Public rule asset oversized')
+   return bytes(body)
+ manifest=read('published/manifest.json',8192)
+ data=json.loads(manifest);manifest_bytes(data)
+ envelope=read(data['envelopePath'],96*1024)
+ bundle=verify_pair(manifest,envelope)
+ require(manifest==expected_manifest and envelope==expected_envelope,'Public feed does not match published revision')
+ return bundle
+
 if __name__=='__main__':
  parser=argparse.ArgumentParser();parser.add_argument('--directory',type=Path,default=ROOT/'staging');args=parser.parse_args()
  manifest=(args.directory/'manifest.json').read_bytes()

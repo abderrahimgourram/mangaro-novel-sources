@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """Immutable assets first; atomic Git ref update last. Failures preserve the old feed."""
-import json,os,shutil,subprocess,tempfile
+import json,os,shutil,subprocess,tempfile,time
 from pathlib import Path
 from validate import ROOT,require,require_health
-from verify import verify_pair
+from verify import verify_pair,verify_public_feed
 
 def run(*args,**kwargs):return subprocess.run(args,check=True,**kwargs)
 revision=int(os.environ['RULE_REVISION'])
 manifest=ROOT/'staging/manifest.json';envelope=ROOT/'staging'/f'rules-{revision}.json'
 bundle=verify_pair(manifest.read_bytes(),envelope.read_bytes());require(bundle['revision']==revision)
 health=json.loads((ROOT/'health.json').read_text())
-require_health(health,bundle)
+source=os.environ.get('PUBLICATION_SOURCE')
+current=None
+if source:
+ prior=ROOT/'published/manifest.json'
+ require(prior.is_file(),'Authenticated current bundle required; scoped publication cannot initialize a feed')
+ data=json.loads(prior.read_bytes())
+ from verify import manifest_bytes
+ manifest_bytes(data)
+ current=verify_pair(prior.read_bytes(),(ROOT/data['envelopePath']).read_bytes())
+ require(bundle['revision']>current['revision'],'Revision must increase')
+require_health(health,bundle,current=current,source=source)
 repo=os.environ['GITHUB_REPOSITORY'];require(repo=='abderrahimgourram/mangaro-novel-sources','Wrong publication namespace')
 tag=f'novel-rules-v{revision}'
 existing=subprocess.run(['gh','release','view',tag,'--repo',repo],capture_output=True)
@@ -30,4 +40,11 @@ run('git','add','published');run('git','commit','-m',f'rules: publish verified r
 # Auth stays in gh's credential helper: no token in remote URLs, scripts or Git history.
 run('gh','auth','setup-git')
 run('git','push','origin','HEAD:main') # Non-fast-forward rejects concurrent source changes; no force push.
-print('Published signed revision',revision,'and advanced the last-known-good feed')
+for attempt in range(3):
+ try:
+  delivered=verify_public_feed(manifest.read_bytes(),envelope.read_bytes());break
+ except Exception:
+  if attempt==2:raise ValueError('Public feed verification failed; preserve pending publication for reconciliation') from None
+  time.sleep(3)
+require(delivered['revision']==revision,'Public revision mismatch')
+print('Published and publicly verified signed CURRENT revision',revision,'; prior immutable revisions retained')

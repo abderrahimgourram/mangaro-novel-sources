@@ -57,6 +57,34 @@ Existing GitHub environment protections and allowed branches still apply.
 
 ## Local verification
 
+### Publication initialization and deep attestation
+
+The existing reviewed `publish.yml` dispatch is the one-time genesis path. It must
+validate all four sources before signing the atomic four-source bundle with the
+Android-pinned key, verify uploaded immutable assets, and then advance the feed.
+A first signed release is CURRENT only; it is not an invented prior LAST-KNOWN-GOOD.
+Automatic operations still require a separately authenticated earlier published
+revision, approved source journal, and independent candidate-bound staging receipt.
+An existing published bundle permits source-scoped acceptance only when every other
+mapping is identical. Shared bundle signatures still cover all four mappings.
+Chapter index hashes must match reviewed journal evidence; totals alone cannot prove
+chapter identity preservation. New index evidence requires explicit baseline review.
+
+SeaNovel protocol 1 remains bounded sample evidence. Protocol 2 retains the same HMAC
+secret, nonce, candidate digest, revision and freshness bindings, with `request-v2`
+and `response-v2` separation. It verifies the actual embedded complete index against
+the official total, unique ascending source IDs, first/middle/last chapter ownership
+and text, and an unchanged index after text checks. It makes six bounded requests
+within 90 seconds, and rejects advertised continuations instead of guessing them.
+Unknown totals, interrupted traversal or blocked access never produce COMPLETE.
+The existing diagnostic workflow verifies both protocols against the authorized
+bridge or a staged deployment of that same project. Its signed source evidence does
+not establish publication provenance or bypass genesis and rollback requirements.
+
+The Android novel update worker currently has `PUBLIC_PIPELINE_APPROVED=false`.
+Feed publication alone does not activate Android consumption; that application change
+requires a separate authorized release and is outside publisher maintenance.
+
 `python -m unittest discover -s tests -v`
 `actionlint -shellcheck=''`
 `git diff --check`

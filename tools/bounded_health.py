@@ -190,8 +190,12 @@ def probe(domain, rules, deep=False, client=None):
             require(meta.get('success') and isinstance(meta.get('volumes'), list) and meta['volumes'], 'VOLUME_METADATA_INVALID')
             fields.pop('meta_only')
             volumes = meta['volumes']
+            counts = [v.get('count') for v in volumes]
+            if all(type(count) is int and count >= 0 for count in counts):
+                official_total = sum(counts)
             terminated = True
             for volume in volumes:
+                before_volume = len(urls)
                 fields['volume'] = str(volume['num'])
                 for page in range(1, max_pages + 1):
                     if pages >= max_pages:
@@ -206,7 +210,10 @@ def probe(domain, rules, deep=False, client=None):
                         break
                 if more:
                     terminated = False; break
+                if type(volume.get('count')) is int:
+                    require(len(urls)-before_volume == volume['count'], 'TRUNCATED_CHAPTER_INDEX')
             if type(meta.get('total')) is int:
+                require(official_total is None or official_total == meta['total'], 'CHAPTER_TOTAL_CONFLICT')
                 official_total = meta['total']
         require(urls, 'EMPTY_CHAPTER_INDEX')
         if official_total is not None:
@@ -243,6 +250,7 @@ def probe(domain, rules, deep=False, client=None):
                       observedChapterCount=len(urls), chapterCount=official_total if complete else None,
                       chapterPages=pages, sampledTexts=len(counts), needsDeep=False,
                       identityHash=hashlib.sha256((domain + ':' + normalized_url(detail)).encode()).hexdigest(),
+                      indexHash=hashlib.sha256(json.dumps([normalized_url(u) for u in urls],separators=(',',':')).encode()).hexdigest(),
                       sampleHashes=[c['textSha256'] for c in counts])
     except (ProbeError, ValueError, KeyError, TypeError, UnicodeError) as error:
         classification = error.classification if isinstance(error, ProbeError) else 'DEGRADED'
