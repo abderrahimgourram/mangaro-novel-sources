@@ -156,7 +156,7 @@ if __name__ == '__main__':
                 result.update(chapterCount=result.get('chapter_count'), verificationTier='ATTESTED_COMPLETE_INDEX')
             else:
                 from bounded_health import probe as bounded_probe
-                observation = bounded_probe(domain, CONFIG[domain], deep=True)
+                observation = bounded_probe(domain, CONFIG[domain], deep=True, acceptance=True)
                 result.update(observation, completeIndex=observation.get('complete', False), verificationTier='ACCEPTANCE')
                 for operation in ['catalog', 'search', 'details', 'chapters', 'text']:
                     result[operation] = observation['operations'].get(operation) == 'PASS'

@@ -101,6 +101,20 @@ class RuleSecurityTest(unittest.TestCase):
     with self.assertRaises((ValueError,FileNotFoundError)):prepare(3,999)
    self.assertEqual((published/'manifest.json').read_bytes(),self.manifest)
    self.assertEqual((published/'rules-2.json').read_bytes(),self.envelope)
+ def test_genesis_requires_explicit_initialization_and_creates_no_history(self):
+  import prepare as module
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory)
+   with patch('prepare.ROOT',root),patch('prepare.build',side_effect=build):
+    with self.assertRaisesRegex(ValueError,'explicitly'):prepare(3)
+    candidate=prepare(3,initial=True)
+    self.assertEqual(candidate['sources'],build(3)['sources'])
+    with self.assertRaises(ValueError):prepare(3,rollback=1,initial=True)
+   self.assertFalse((root/'published').exists())
+ def test_stage_only_workflow_defaults_to_no_production_writes(self):
+  workflow=(ROOT/'.github/workflows/publish.yml').read_text()
+  self.assertIn('stage_only:',workflow);self.assertIn('if: ${{ !inputs.stage_only }}',workflow)
+  self.assertIn('--initial-release',workflow)
  def test_broken_candidate_cannot_be_packaged(self):
   from package import package
   candidate=build(3);candidate['sources'][0]['selectors']['text']='html'

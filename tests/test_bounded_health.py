@@ -79,6 +79,23 @@ class BoundedNovelTest(unittest.TestCase):
             result = probe(DOMAIN, RULES, client=FixtureClient(mode, 100))
             self.assertFalse(result['ok'])
             self.assertEqual(result['operation'], 'chapters')
+    def test_fractional_upstream_entries_sharing_one_url_are_not_deduplicated(self):
+        client=FixtureClient();original=client.html
+        def html(url):
+            if 'activeTab=' in url:
+                return BeautifulSoup('<ul class="chaptersList"><a href="/novel/reverend-insanity/1153" title="1153 الفصل"></a><a href="/novel/reverend-insanity/1153" title="1153,2 الفصل"></a></ul>','html.parser')
+            return original(url)
+        client.html=html;r=probe(DOMAIN,RULES,client=client)
+        self.assertFalse(r['complete']);self.assertEqual(r['reason'],'UPSTREAM_CHAPTER_IDENTITY_COLLISION')
+        self.assertEqual(r['operations']['text'],'SKIPPED')
+    def test_disabled_next_button_is_not_a_continuation(self):
+        client=FixtureClient();original=client.html
+        def html(url):
+            doc=original(url)
+            if 'activeTab=' in url:doc.append(BeautifulSoup('<li class="next disabled"><a rel="next" aria-disabled="true">Next</a></li>','html.parser'))
+            return doc
+        client.html=html;r=probe(DOMAIN,RULES,client=client)
+        self.assertEqual(r['chapterPages'],1);self.assertEqual(r['indexState'],'UNKNOWN_TOTAL')
     def test_details_dependency_blocks_reader_after_invalid_identity(self):
         client = FixtureClient('identity')
         result = probe(DOMAIN, RULES, client=client)
