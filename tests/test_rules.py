@@ -27,6 +27,44 @@ class RuleSecurityTest(unittest.TestCase):
    with patch('requests.get',return_value=response(body,status)),self.assertRaises(ValueError):verify_public_feed(self.manifest,self.envelope)
   with patch('requests.get',side_effect=[response(self.manifest),response(self.envelope)]),self.assertRaisesRegex(ValueError,'does not match'):
    verify_public_feed(self.manifest+b' ',self.envelope)
+ def test_source_scoped_rollback_uses_real_signed_bundle_format(self):
+  # Disposable keys exercise the real contract; this is never production authority.
+  import os
+  from operations import Coordinator,fingerprint
+  from package import package
+  source='cenele.com';good=build(2);good['revision']=1
+  bad=copy.deepcopy(good);bad['revision']=2
+  bad['sources'][1]['selectors']['text']='.broken-reader'
+  bad['sources'][2]['selectors']['text']='.unrelated-current-reader'
+  with tempfile.TemporaryDirectory() as directory:
+   key=Path(directory)/'disposable.pem';public=Path(directory)/'disposable.der'
+   subprocess.run(['openssl','genpkey','-algorithm','RSA','-pkeyopt','rsa_keygen_bits:2048','-out',str(key)],check=True,capture_output=True)
+   os.chmod(key,0o600)
+   subprocess.run(['openssl','pkey','-in',str(key),'-pubout','-outform','DER','-out',str(public)],check=True,capture_output=True)
+   def authenticate(value):return verify_pair(base64.b64decode(value['manifest']),base64.b64decode(value['envelope']),key=public)
+   def signed(candidate):
+    with patch('package.verify_pair',side_effect=lambda m,e:verify_pair(m,e,key=public)):
+     manifest,envelope=package(candidate,key)
+    return dict(manifest=base64.b64encode(manifest).decode(),envelope=base64.b64encode(envelope).decode())
+   live=signed(bad);before=copy.deepcopy(live)
+   class Store:
+    state={'schema':1,'sources':{source:{'approved':True,'lastKnownGood':signed(good),'publishedHash':fingerprint(live),'witness':{'complete':True,'ids':['fixture']}}}}
+    def read(self):return copy.deepcopy(self.state)
+    def write(self,state):self.state=copy.deepcopy(state)
+   def publish(candidate,witness):
+    nonlocal live
+    live=signed(candidate);return live
+   store=Store()
+   coordinator=Coordinator(store,authenticate,lambda *args:{'complete':True,'ids':['fixture']},lambda candidate,witness:{'accepted':True,'independent':True,'runtimeVerified':True,'candidateHash':fingerprint(candidate)},publish,lambda source:copy.deepcopy(live))
+   for stamp in (200000,203600,207200):
+    coordinator.clock=lambda stamp=stamp:stamp
+    result=coordinator.observe_regression(source,lambda *args:{'classification':'CONFIRMED_CONTENT_LOSS','confirmedSemantic':True})
+   restored=authenticate(live)
+   self.assertEqual(result['action'],'ROLLBACK_VERIFIED');self.assertEqual(restored['revision'],3)
+   self.assertEqual(restored['sources'][1],good['sources'][1])
+   self.assertEqual(restored['sources'][2],bad['sources'][2])
+   self.assertEqual(authenticate(before),bad)
+   self.assertEqual(authenticate(store.state['sources'][source]['lastKnownGood']),good)
  def test_manifest_metadata_tamper_is_rejected(self):
   for field,value in [('revision',3),('engineVersion',1),('sha256','0'*64),('envelopePath','published/rules-3.json')]:
    data=json.loads(self.manifest);data[field]=value
