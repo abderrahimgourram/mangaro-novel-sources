@@ -145,7 +145,7 @@ def execute():
         def health(candidate):
             (ROOT/'bundle.json').write_text(json.dumps(candidate,ensure_ascii=False,separators=(',',':')))
             require(active_source in inventory,'SOURCE_PUBLICATION_GATE_CLOSED')
-            process=subprocess.run([sys.executable,str(HERE/'health.py'),'--bundle',str(ROOT/'bundle.json'),'--source',active_source],capture_output=True,timeout=240)
+            process=subprocess.run([sys.executable,str(HERE/'health.py'),'--bundle',str(ROOT/'bundle.json'),'--source',active_source],capture_output=True,timeout=330)
             report=json.loads((ROOT/'health.json').read_text())
             if process.returncode:
                 failed=[r for r in report if not r.get('completeIndex') or not all(r.get(op) is True for op in ['catalog','search','details','chapters','text'])]
@@ -166,7 +166,7 @@ def execute():
             report=health(candidate)
             require_health(report,candidate,current=auth(fetch(active_source)),source=active_source)
             known=witness.get('novelWitness',{})
-            observed={r['domain']:{'identityHash':r.get('identityHash'),'chapterCount':r.get('chapterCount'),'indexHash':r.get('indexHash')} for r in report}
+            observed={r['domain']:{'identityHash':r.get('identityHash'),'chapterCount':r.get('verifiedChapterCount') or r.get('chapterCount'),'indexHash':r.get('indexHash')} for r in report}
             require(set(observed)=={active_source} and set(observed)<=set(known),'AUTHENTICATED_NOVEL_IDENTITY_WITNESS_REQUIRED')
             for domain,actual in observed.items():
                 prior=known[domain]

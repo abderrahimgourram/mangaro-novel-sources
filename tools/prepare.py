@@ -4,13 +4,15 @@ import argparse,json
 from validate import ROOT,build,validate,require
 from verify import verify_pair,verify_envelope,manifest_bytes
 
-def prepare(revision,rollback=0):
+def prepare(revision,rollback=0,initial=False):
  prior=ROOT/'published/manifest.json'
  current=0
  if prior.exists():
   data=json.loads(prior.read_bytes());manifest_bytes(data)
   bundle=verify_pair(prior.read_bytes(),(ROOT/'published'/f"rules-{data['revision']}.json").read_bytes())
   current=bundle['revision']
+ require(current>0 or initial,'Missing production baseline; explicitly authorize initial-release preparation')
+ require(not initial or current==0 and rollback==0,'Initial release cannot replace a published revision or fabricate rollback history')
  require(revision>current,'Revision must be greater than the published last-known-good revision')
  if rollback:
   require(0<rollback<=current,'Unknown rollback revision')
@@ -21,6 +23,6 @@ def prepare(revision,rollback=0):
 
 if __name__=='__main__':
  parser=argparse.ArgumentParser();parser.add_argument('--revision',type=int,required=True)
- parser.add_argument('--rollback',type=int,default=0);args=parser.parse_args()
- (ROOT/'bundle.json').write_text(json.dumps(prepare(args.revision,args.rollback),ensure_ascii=False,separators=(',',':')))
+ parser.add_argument('--rollback',type=int,default=0);parser.add_argument('--initial-release',action='store_true');args=parser.parse_args()
+ (ROOT/'bundle.json').write_text(json.dumps(prepare(args.revision,args.rollback,args.initial_release),ensure_ascii=False,separators=(',',':')))
  print('Prepared candidate revision',args.revision,'rollback from',args.rollback or 'none')

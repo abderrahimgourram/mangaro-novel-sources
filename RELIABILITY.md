@@ -144,3 +144,34 @@ protected publication accidentally. Repair execution reads authenticated observa
 history for *eligibility only*: three semantic failures or a pending confirmed regression.
 Healthy/unaffected sources do not trigger deep/signing jobs. Observation history never
 satisfies the independent production acceptance gates.
+
+## Initial publication and unknown totals
+
+`publish.yml` defaults to `stage_only=true`: source acceptance precedes access to the
+existing signing key, and verified manifest/envelope bytes are retained without writing
+Releases or the public feed. An absent authenticated CURRENT requires the explicit
+`initial_release=true` input. Initialization cannot replace CURRENT or invent a rollback
+revision. A first production write still requires final authorization and independent
+real-source acceptance of all four mappings. An authenticated first release alone does
+not establish a previous last-known-good revision or enable automatic operations.
+Subsequent scoped updates preserve every unchanged mapping from authenticated CURRENT;
+an unchanged source's temporary failure need not invalidate another source's repair.
+
+Kolnovel acceptance can prove its *published source index* without guessing an official
+total: verify every stable post ID, chapter canonical and series owner, the complete
+bidirectional reader navigation chain including both terminal boundaries, then refetch
+the index and verify unchanged IDs, URLs, titles and boundaries. Displayed numeric labels
+are not identities. `chapterCount` remains unknown when no official total is supplied;
+`verifiedChapterCount` records the actual distinct chain, with
+`completenessBasis=VERIFIED_CLOSED_CHAPTER_CHAIN`. This does not prove availability of
+unpublished chapters. Acceptance has a 600-request/300-second ceiling and at most two
+concurrent metadata requests, stopping before chapter text; only three representative
+chapter bodies are sampled. Routine/deep monitoring retains its original smaller budget
+and never traverses this whole chain.
+
+Sunovels' identical chapter URLs with different titles fail explicitly as
+`UPSTREAM_CHAPTER_IDENTITY_COLLISION`; fractional parts must not be discarded or assigned
+invented URLs. A disabled next-page control is not a continuation. Until the upstream
+publishes distinct stable paths or another genuinely verified identity mechanism is
+supported, this source and all-source genesis acceptance remain blocked. No selector
+change can recover two different chapter bodies from the same ambiguous URL.

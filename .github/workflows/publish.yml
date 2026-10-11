@@ -10,6 +10,14 @@ on:
         description: Optional prior revision to revalidate and reissue (0 for current rules)
         type: number
         default: 0
+      initial_release:
+        description: Explicitly prepare the first CURRENT; no previous release or rollback authority
+        type: boolean
+        default: false
+      stage_only:
+        description: Verify signed staging without writing Releases or the production feed
+        type: boolean
+        default: true
       reviewed:
         description: Security, licensing and content-handling review completed
         type: boolean
@@ -33,6 +41,7 @@ jobs:
     env:
       RULE_REVISION: ${{ inputs.revision }}
       ROLLBACK_REVISION: ${{ inputs.rollback_revision }}
+      INITIAL_RELEASE: ${{ inputs.initial_release }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -47,7 +56,9 @@ jobs:
       - name: Validate compatibility, increasing revision and optional rollback
         run: |
           python -m unittest discover -s tests -v
-          python tools/prepare.py --revision "$RULE_REVISION" --rollback "$ROLLBACK_REVISION"
+          initial_args=()
+          if [ "$INITIAL_RELEASE" = true ]; then initial_args+=(--initial-release); fi
+          python tools/prepare.py --revision "$RULE_REVISION" --rollback "$ROLLBACK_REVISION" "${initial_args[@]}"
       - name: Health-check the exact candidate before accessing the signing key
         run: python tools/health.py --bundle bundle.json
         env:
@@ -64,10 +75,21 @@ jobs:
           NOVEL_RULE_SIGNING_KEY_FILE="$key_file" python tools/package.py
       - name: Verify both signatures and hash/version bindings
         run: python tools/verify.py
-      - name: Publish immutable assets, then advance the last-known-good feed
+      - name: Publish immutable assets, then advance the CURRENT feed
+        if: ${{ !inputs.stage_only }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: python tools/publish.py
+      - name: Retain exact verified staging bytes without publication
+        if: inputs.stage_only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: signed-novel-staging-${{ github.run_id }}
+          path: |
+            staging/manifest.json
+            staging/rules-${{ inputs.revision }}.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Write source status summary
         if: always()
         run: python tools/report.py

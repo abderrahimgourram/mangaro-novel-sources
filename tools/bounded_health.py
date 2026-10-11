@@ -33,13 +33,16 @@ def checked_url(url, domain):
 
 
 class Client:
-    def __init__(self, domain, deep=False):
+    def __init__(self, domain, deep=False, acceptance=False):
         self.domain = domain
         self.remaining = 48 if deep else 12
         self.deadline = time.monotonic() + (180 if deep else 65)
+        if acceptance:
+            self.remaining = 600 if domain == 'kolnovel.com' else 96
+            self.deadline = time.monotonic() + 300
         self.session = requests.Session()
         self.session.headers['User-Agent'] = 'MangaroNovelPrototype/0.1'
-    def fetch(self, url, data=None):
+    def fetch(self, url, data=None, metadata=False):
         checked_url(url, self.domain)
         if self.remaining <= 0 or time.monotonic() >= self.deadline:
             raise ProbeError('PROBE_BUDGET_EXHAUSTED', 'INSUFFICIENT_EVIDENCE')
@@ -55,11 +58,17 @@ class Client:
                     raise ProbeError('UPSTREAM_NOT_FOUND', 'UNAVAILABLE')
                 require(response.status_code == 200, 'REDIRECT_OR_INVALID_RESPONSE')
                 body = bytearray()
+                marker=None
                 for chunk in response.iter_content(8192):
                     body.extend(chunk)
-                    require(len(body) <= 8 * 1024 * 1024, 'BODY_LIMIT_EXCEEDED')
+                    require(len(body) <= (128*1024 if metadata else 8*1024*1024), 'BODY_LIMIT_EXCEEDED')
                     if time.monotonic() >= self.deadline:
                         raise ProbeError('PROBE_BUDGET_EXHAUSTED', 'INSUFFICIENT_EVIDENCE')
+                    if metadata:
+                        marker=re.search(rb'<[^>]+\bid=["\x27]kol_content["\x27]',body)
+                        if marker:
+                            body=body[:marker.start()];break
+                if metadata:require(marker is not None,'CHAPTER_METADATA_BOUNDARY_UNAVAILABLE')
                 raw = bytes(body).decode(response.encoding or 'utf-8', 'strict')
                 if re.search(r'(?i)<title[^>]*>\s*(just a moment|attention required|access denied)|id=["\x27](challenge-form|cf-wrapper)|cf-browser-verification', raw):
                     raise ProbeError('CHALLENGE_HTML', 'BLOCKED_BY_CHALLENGE')
@@ -71,6 +80,23 @@ class Client:
             raise ProbeError('TRANSPORT_ERROR', 'TRANSIENT_NETWORK_ERROR') from None
     def html(self, url):
         return BeautifulSoup(self.fetch(url), 'html5lib')
+    def chapter_metadata(self,url):
+        # The actual top chapter bar precedes the text; stop before kol_content.
+        return BeautifulSoup(self.fetch(url,metadata=True),'html.parser')
+    def chapter_metadata_batch(self,urls):
+        from concurrent.futures import ThreadPoolExecutor
+        require(len(urls)<=self.remaining,'PROBE_BUDGET_EXHAUSTED')
+        self.remaining-=len(urls)
+        def read(url):
+            worker=Client(self.domain,True)
+            worker.remaining=1;worker.deadline=self.deadline
+            try:return worker.chapter_metadata(url)
+            finally:worker.close()
+        # Two requests and two independent sessions at most; never queue the whole book.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for start in range(0,len(urls),2):
+                batch=[pool.submit(read,u) for u in urls[start:start+2]]
+                for future in batch:yield future.result()
     def close(self):
         self.session.close()
 
@@ -101,13 +127,41 @@ def chapter_links(doc, selector, detail, domain):
     require(len(set(links)) == len(links), 'DUPLICATE_CHAPTER_IDENTITIES')
     return links
 
+def kolnovel_graph(doc, detail, urls, client):
+    """Prove the entire published chapter chain, without using numbered labels as IDs."""
+    rows=doc.select('.eplister li[data-id]')
+    ids=[r['data-id'] for r in rows]
+    require(len(ids)==len(urls) and len(set(ids))==len(ids) and all(re.fullmatch(r'[1-9][0-9]*',i) for i in ids),'CHAPTER_IDENTITY_INVALID')
+    first=doc.select_one('.epcurfirst');last=doc.select_one('.epcurlast')
+    require(first is not None and last is not None and first.parent.get('href')==urls[-1] and last.parent.get('href')==urls[0],'INDEX_BOUNDARIES_UNVERIFIED')
+    require(not doc.select('.epcheck .pagination,.epcheck a[rel=next],.epcheck [data-next-page],.epcheck [data-next-cursor]'),'INDEX_CONTINUATION_UNVERIFIED')
+    metadata_pages=client.chapter_metadata_batch(urls) if isinstance(client,Client) else (client.chapter_metadata(u) for u in urls)
+    verified=0
+    for position,(chapter,identity,metadata) in enumerate(zip(urls,ids,metadata_pages)):
+        canonical=metadata.select_one('link[rel=canonical]')
+        require(canonical is not None and normalized_url(canonical.get('href',''))==normalized_url(chapter),'CHAPTER_IDENTITY_MISMATCH')
+        require(metadata.select_one('article#post-'+identity) is not None,'CHAPTER_IDENTITY_MISMATCH')
+        owners=[normalized_url(urljoin(chapter,a['href'])) for a in metadata.select('.ts-breadcrumb a[href*="/series/"]')]
+        require(owners==[normalized_url(detail)],'CHAPTER_OWNERSHIP_MISMATCH')
+        for direction,expected in [('next',urls[position-1] if position else None),('prev',urls[position+1] if position+1<len(urls) else None)]:
+            edges={normalized_url(urljoin(chapter,a['href'])) for a in metadata.select('.kol-chapter-bar a[rel='+direction+'][href]')}
+            require(edges==({normalized_url(expected)} if expected else set()),'INCOMPLETE_CHAPTER_CHAIN')
+        verified+=1
+    require(verified==len(urls),'INCOMPLETE_CHAPTER_CHAIN')
+    repeated=client.html(detail)
+    repeated_rows=repeated.select('.eplister li[data-id]')
+    require([(r['data-id'],r.select_one('a')['href'],r.select_one('.epl-title').get_text(' ',strip=True)) for r in rows]==[(r['data-id'],r.select_one('a')['href'],r.select_one('.epl-title').get_text(' ',strip=True)) for r in repeated_rows],'INDEX_CHANGED_DURING_VERIFICATION')
+    require(repeated.select_one('.epcurfirst') is not None and repeated.select_one('.epcurfirst').parent.get('href')==urls[-1] and repeated.select_one('.epcurlast') is not None and repeated.select_one('.epcurlast').parent.get('href')==urls[0],'INDEX_BOUNDARIES_CHANGED')
+    return len(ids)
 
-def probe(domain, rules, deep=False, client=None):
+
+def probe(domain, rules, deep=False, client=None, acceptance=False):
     operations = {k: 'SKIPPED' for k in ['catalog', 'search', 'identity', 'details', 'chapters', 'pagination', 'text']}
     result = {'operations': operations, 'ok': False, 'complete': False,
               'classification': 'INSUFFICIENT_EVIDENCE', 'evidence': 'BOUNDED_NOVEL_SAMPLE'}
     stage = 'catalog'
-    client = client or Client(domain, deep)
+    require(not acceptance or deep,'ACCEPTANCE_REQUIRES_DEEP')
+    client = client or Client(domain, deep, acceptance)
     try:
         if domain not in SAMPLES or domain == 'seanovel.org':
             raise ProbeError('UNSUPPORTED_SOURCE_TRANSPORT', 'INSUFFICIENT_EVIDENCE')
@@ -147,7 +201,8 @@ def probe(domain, rules, deep=False, client=None):
         more = False
         official_total = None
         terminated = False
-        max_pages = 25 if deep else 2
+        chain_verified = False
+        max_pages = 64 if acceptance else 25 if deep else 2
         pages = 0
         def add(links):
             require(bool(links) and not visited.intersection(links), 'REPEATED_OR_MISSING_CHAPTER_PAGE')
@@ -159,10 +214,22 @@ def probe(domain, rules, deep=False, client=None):
             if total_node:
                 official_total = int(total_node['data-total-chapters'])
             # No inferred total from the number of HTML rows.
+            if acceptance:
+                kolnovel_graph(doc,detail,urls,client)
+                chain_verified=True
         elif domain == 'sunovels.com':
             declared_pages = None
             for page in range(max_pages):
                 page_doc = client.html(detail + '?activeTab=chapters&page=' + str(page))
+                anchors=page_doc.select('ul.chaptersList a[href]')
+                identities={}
+                for a in anchors:
+                    identity=checked_url(urljoin(detail,a['href']),domain)
+                    label=a.get('title') or a.get_text(' ',strip=True)
+                    if identity in identities and identities[identity]!=label:
+                        result.update(failedChapterPage=page+1,collisionIdentityHash=hashlib.sha256(identity.encode()).hexdigest())
+                    require(identity not in identities or identities[identity]==label,'UPSTREAM_CHAPTER_IDENTITY_COLLISION')
+                    identities[identity]=label
                 add(chapter_links(page_doc, 'ul.chaptersList a', detail, domain)); pages += 1
                 totals = [int(re.search(r'\d+', a.get('aria-label', ''))[0]) for a in page_doc.select('a[aria-label^=Page]') if re.search(r'\d+', a.get('aria-label', ''))]
                 total_pages = max(totals) if totals else None
@@ -170,7 +237,8 @@ def probe(domain, rules, deep=False, client=None):
                     require(total_pages == declared_pages, 'PAGINATION_TOTAL_CHANGED')
                 declared_pages = total_pages
                 next_link = page_doc.select_one('a[rel=next], a[aria-label=Next]')
-                more = bool(next_link) or total_pages is not None and page + 1 < total_pages
+                active_next=next_link is not None and next_link.get('aria-disabled')!='true' and 'disabled' not in next_link.parent.get('class',[])
+                more = active_next or total_pages is not None and page + 1 < total_pages
                 if not more:
                     terminated = total_pages is not None
                     break
@@ -220,7 +288,7 @@ def probe(domain, rules, deep=False, client=None):
             require(official_total >= len(urls), 'CHAPTER_TOTAL_CONFLICT')
             if terminated:
                 require(official_total == len(urls), 'TRUNCATED_CHAPTER_INDEX')
-        complete = terminated and official_total is not None and len(urls) == official_total
+        complete = terminated and (chain_verified or official_total is not None and len(urls) == official_total)
         operations['chapters'] = 'PASS' if complete else 'PARTIAL'
         operations['pagination'] = 'PASS' if terminated else 'PARTIAL'
         # Check numeric order when the source actually publishes numbers in its chapter paths.
@@ -245,9 +313,12 @@ def probe(domain, rules, deep=False, client=None):
             counts.append(text_sample(chapter_doc, rules['text']))
         operations[stage] = 'PASS'
         result.update(ok=True, complete=complete, classification='HEALTHY' if complete else 'DEGRADED',
+                      evidence='COMPLETE_CHAPTER_CHAIN_AND_TEXT_SAMPLES' if chain_verified else result['evidence'],
                       reason='VERIFIED_COMPLETE_INDEX' if complete else 'PARTIAL_OR_UNKNOWN_INDEX',
                       indexState='COMPLETE' if complete else 'MORE_AVAILABLE' if more else 'UNKNOWN_TOTAL',
                       observedChapterCount=len(urls), chapterCount=official_total if complete else None,
+                      verifiedChapterCount=len(urls) if complete else None,
+                      completenessBasis='VERIFIED_CLOSED_CHAPTER_CHAIN' if chain_verified else 'OFFICIAL_TOTAL' if complete else 'UNVERIFIED',
                       chapterPages=pages, sampledTexts=len(counts), needsDeep=False,
                       identityHash=hashlib.sha256((domain + ':' + normalized_url(detail)).encode()).hexdigest(),
                       indexHash=hashlib.sha256(json.dumps([normalized_url(u) for u in urls],separators=(',',':')).encode()).hexdigest(),
