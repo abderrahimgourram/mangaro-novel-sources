@@ -63,9 +63,10 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--deep',action='store_true')
     parser.add_argument('--deployment',default='')
+    parser.add_argument('--sources',help='Explicit registered IDs for schema-2 partial compatibility verification')
     args=parser.parse_args()
     try:
-        result=check(build(2),deep=args.deep,endpoint=args.deployment.rstrip('/')+'/api/probe' if args.deployment else None)
+        result=check(build(2,args.sources.split(',') if args.sources is not None else None),deep=args.deep,endpoint=args.deployment.rstrip('/')+'/api/probe' if args.deployment else None)
         result.pop('requestNonce',None)
         result.update(purpose='SOURCE_EVIDENCE_ONLY',production='NOT_EXECUTED')
         passed=result.get('status')=='healthy' and (not args.deep or result.get('completeIndex') is True)
