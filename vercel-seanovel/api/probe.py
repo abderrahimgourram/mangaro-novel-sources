@@ -188,16 +188,19 @@ def candidate_request(raw):
     if len(payload)>64*1024 or hashlib.sha256(payload).hexdigest()!=data['candidateSha256']:
         raise ValueError('Candidate digest')
     bundle=json.loads(payload)
-    if set(bundle)!={'schemaVersion','engineVersion','revision','sources'} or type(bundle['schemaVersion']) is not int or bundle['schemaVersion']!=1:
+    schema=bundle.get('schemaVersion')
+    if type(schema) is not int or schema not in (1,2) or set(bundle)!=({'schemaVersion','engineVersion','revision','sources'} if schema==1 else {'schemaVersion','engineVersion','revision','mode','sources'}):
         raise ValueError('Bundle schema')
-    if type(bundle['engineVersion']) is not int or bundle['engineVersion'] not in (1,2):
+    if type(bundle['engineVersion']) is not int or bundle['engineVersion'] not in ((1,2) if schema==1 else (3,)):
         raise ValueError('Engine')
+    if schema==2 and bundle['mode'] not in ('PARTIAL','FULL'):raise ValueError('Update mode')
     if type(bundle['revision']) is not int or not 0<bundle['revision']<=2147483647 or type(data['revision']) is not int or data['revision']!=bundle['revision']:
         raise ValueError('Revision')
     domains={'novel.kolnovel':'kolnovel.com','novel.cenele':'cenele.com','novel.sunovels':'sunovels.com','novel.seanovel':'seanovel.org'}
     keys={'catalogCards','catalogTitle','catalogCover','detailsTitle','detailsCover','description','genres','chapterLinks','chapterTitle','text','originalTitle'}
     sources=bundle['sources']
-    if not isinstance(sources,list) or len(sources)!=4:raise ValueError('Four sources required')
+    partial=schema==2 and bundle['mode']=='PARTIAL'
+    if not isinstance(sources,list) or not (1<=len(sources)<=4 if partial else len(sources)==4):raise ValueError('Source count')
     seen=set();sea=None
     for item in sources:
         if not isinstance(item,dict) or set(item)!={'id','domain','selectors'} or item['id'] not in domains or domains[item['id']]!=item['domain'] or item['id'] in seen:
@@ -211,7 +214,7 @@ def candidate_request(raw):
         if item['id']=='novel.seanovel':
             if set(selectors)!={'text'}:raise ValueError('Unsupported SeaNovel selector')
             sea=selectors
-    if seen!=set(domains) or sea is None:raise ValueError('Source set')
+    if (not partial and seen!=set(domains)) or sea is None:raise ValueError('Source set')
     return data,sea
 
 class handler(BaseHTTPRequestHandler):
