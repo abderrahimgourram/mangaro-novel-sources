@@ -10,6 +10,14 @@ on:
         description: Optional prior revision to revalidate and reissue (0 for current rules)
         type: number
         default: 0
+      sources:
+        description: Comma-separated source IDs for v2 partial staging; empty uses legacy full format
+        type: string
+        default: ''
+      publication_source:
+        description: Optional changed domain; requires authenticated CURRENT and exact preservation of all other mappings
+        type: string
+        default: ''
       initial_release:
         description: Explicitly prepare the first CURRENT; no previous release or rollback authority
         type: boolean
@@ -42,6 +50,8 @@ jobs:
       RULE_REVISION: ${{ inputs.revision }}
       ROLLBACK_REVISION: ${{ inputs.rollback_revision }}
       INITIAL_RELEASE: ${{ inputs.initial_release }}
+      RULE_SOURCES: ${{ inputs.sources }}
+      PUBLICATION_SOURCE: ${{ inputs.publication_source }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -58,9 +68,13 @@ jobs:
           python -m unittest discover -s tests -v
           initial_args=()
           if [ "$INITIAL_RELEASE" = true ]; then initial_args+=(--initial-release); fi
+          if [ -n "$RULE_SOURCES" ]; then initial_args+=(--sources "$RULE_SOURCES"); fi
           python tools/prepare.py --revision "$RULE_REVISION" --rollback "$ROLLBACK_REVISION" "${initial_args[@]}"
       - name: Health-check the exact candidate before accessing the signing key
-        run: python tools/health.py --bundle bundle.json
+        run: |
+          health_args=()
+          if [ -n "$PUBLICATION_SOURCE" ]; then health_args+=(--source "$PUBLICATION_SOURCE"); fi
+          python tools/health.py --bundle bundle.json "${health_args[@]}"
         env:
           SEANOVEL_ATTESTATION_SECRET: ${{ secrets.SEANOVEL_ATTESTATION_SECRET }}
       - name: Sign only after every probe passes

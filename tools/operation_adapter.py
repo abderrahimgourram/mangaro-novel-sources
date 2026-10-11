@@ -18,10 +18,11 @@ REPOSITORY='abderrahimgourram/'+('mangaro-source-rule-publisher' if MANGA else '
 sys.path.insert(0,str(HERE.parent if MANGA else HERE))
 
 
-def api(method,path,data=None):
+def api(method,path,data=None,allow_missing=False):
     command=['gh','api','--method',method,path]
     if data is not None:command+=['--input','-']
     result=subprocess.run(command,input=json.dumps(data) if data is not None else None,capture_output=True,text=True,timeout=30)
+    if allow_missing and result.returncode and '(HTTP 404)' in result.stderr:return None
     require(result.returncode==0,'AUTHENTICATED_OPERATION_API_UNAVAILABLE')
     return json.loads(result.stdout)
 
@@ -41,8 +42,12 @@ def configuration():
     def authenticate(value):
         return verify_pair(base64.b64decode(value['manifest'],validate=True),base64.b64decode(value['envelope'],validate=True))
     def fetch(source):
-        def content(path):return base64.b64decode(api('GET',f'repos/{REPOSITORY}/contents/{path}?ref=main')['content'])
-        manifest=content('published/manifest.json');data=json.loads(manifest)
+        def content(path,optional=False):
+            item=api('GET',f'repos/{REPOSITORY}/contents/{path}?ref=main',allow_missing=optional)
+            return base64.b64decode(item['content'],validate=True) if item is not None else None
+        manifest=content('published/v2/manifest.json',True)
+        if manifest is None:manifest=content('published/manifest.json')
+        data=json.loads(manifest)
         from verify import manifest_bytes
         manifest_bytes(data)
         envelope=content(data['envelopePath'])
@@ -183,6 +188,10 @@ def execute():
             stage=ROOT/'staging';stage.mkdir(exist_ok=True)
             (stage/'manifest.json').write_bytes(manifest);(stage/f"rules-{candidate['revision']}.json").write_bytes(envelope)
             (ROOT/'health.json').write_text(json.dumps(report))
+            if candidate['schemaVersion']==2:
+                proof=store.read().get('stagingReceipts',{}).get(fingerprint(candidate))
+                require(proof is not None,'REAL_SOURCE_STAGING_ACCEPTANCE_UNAVAILABLE')
+                (stage/'acceptance.json').write_text(json.dumps(proof))
             env=dict(os.environ,RULE_REVISION=str(candidate['revision']),PUBLICATION_SOURCE=active_source)
             result=subprocess.run([sys.executable,str(HERE/'publish.py')],env=env,capture_output=True,timeout=180)
             require(result.returncode==0,'SOURCE_SCOPED_PUBLICATION_FAILED')
@@ -195,6 +204,9 @@ def execute():
         proof=state.get('stagingReceipts',{}).get(fingerprint(candidate))
         require(proof is not None,'REAL_SOURCE_STAGING_ACCEPTANCE_UNAVAILABLE')
         receipt=unseal(proof)
+        if not MANGA and candidate.get('schemaVersion')==2:
+            from validate import require_staging
+            require_staging(proof,candidate,active_source)
         require(receipt.get('purpose')=='SOURCE_STAGING_ACCEPTANCE_V1' and receipt.get('repository')==REPOSITORY,'STAGING_PROVENANCE_MISMATCH')
         stamp=receipt.get('verifiedAt')
         require(type(stamp) is int and 0<=time.time()-stamp<=3600,'STAGING_ACCEPTANCE_EXPIRED')
