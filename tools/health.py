@@ -152,8 +152,8 @@ if __name__ == '__main__':
             if domain == 'seanovel.org':
                 from sea_attestation import check
                 result['checking']='attestation'
-                result=check(candidate)
-                result.update(completeIndex=False, indexState='UNKNOWN_TOTAL', verificationTier='ATTESTED_SAMPLE')
+                result=check(candidate, deep=True)
+                result.update(chapterCount=result.get('chapter_count'), verificationTier='ATTESTED_COMPLETE_INDEX')
             else:
                 from bounded_health import probe as bounded_probe
                 observation = bounded_probe(domain, CONFIG[domain], deep=True)

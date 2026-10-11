@@ -38,6 +38,28 @@ class FixtureClient:
         return BeautifulSoup('<div class="list-item"><a href="/novel/reverend-insanity">Reverend Insanity</a></div>', 'html.parser')
 
 class BoundedNovelTest(unittest.TestCase):
+    def test_cenele_official_volume_counts_verify_complete_index(self):
+        domain='cenele.com'; detail='https://cenele.com/cont/create-heaven-riwya/'
+        rules=next(s['selectors'] for s in build(2)['sources'] if s['domain']==domain)
+        class CeneleClient:
+            total=3
+            def close(self): pass
+            def html(self,url):
+                if url==detail:
+                    raw='<h1 class="nhv-novel-title">Create Heaven</h1><div class="nhv-novel-synopsis">A meaningful description from a deterministic fixture.</div><script id="nhv-novel-single-v2-js-extra">var nhvNovelV2 = {"postId":42,"chaptersNonce":"fixture-only"};</script>'
+                elif '/chapter-' in url: raw=TEXT.replace('chapter-content','reading-content')
+                else: raw='<a class="nhv-cover" href="'+detail+'">Create Heaven</a>'
+                return BeautifulSoup(raw,'html.parser')
+            def fetch(self,url,fields):
+                if fields.get('meta_only'): return json.dumps({'success':True,'volumes':[{'num':-1,'count':self.total}]})
+                return json.dumps({'success':True,'has_more':False,'html':''.join('<li class="wp-manga-chapter"><a href="'+detail+'chapter-'+str(i)+'">Chapter</a></li>' for i in (1,2,3))})
+        client=CeneleClient()
+        result=probe(domain,rules,deep=True,client=client)
+        self.assertTrue(result['complete']); self.assertEqual(result['chapterCount'],3)
+        client.total=4
+        result=probe(domain,rules,deep=True,client=client)
+        self.assertFalse(result['complete']); self.assertEqual(result['reason'],'TRUNCATED_CHAPTER_INDEX')
+
     def test_partial_long_index_never_claims_full_count(self):
         client = FixtureClient(pages=1000)
         result = probe(DOMAIN, RULES, client=client)

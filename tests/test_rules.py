@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 from validate import ROOT,build,validate,require_health,DOMAINS
-from verify import manifest_bytes,verify_pair,verify_envelope
+from verify import manifest_bytes,verify_pair,verify_envelope,verify_public_feed
 from prepare import prepare
 
 FIXTURE=ROOT/'tests/fixtures'
@@ -15,6 +15,18 @@ class RuleSecurityTest(unittest.TestCase):
   bundle=verify_pair(self.manifest,self.envelope)
   self.assertEqual(bundle['revision'],2)
   self.assertEqual(len(bundle['sources']),4)
+ def test_public_feed_requires_actual_pinned_signed_bytes(self):
+  from unittest.mock import MagicMock
+  def response(raw,status=200):
+   r=MagicMock();r.__enter__.return_value=r;r.status_code=status;r.iter_content.return_value=[raw];return r
+  with patch('requests.get',side_effect=[response(self.manifest),response(self.envelope)]) as network:
+   self.assertEqual(verify_public_feed(self.manifest,self.envelope)['revision'],2)
+   self.assertEqual(network.call_count,2)
+   self.assertFalse(network.call_args.kwargs['allow_redirects'])
+  for body,status in [(self.manifest,404),(self.manifest+b' '*8192,200)]:
+   with patch('requests.get',return_value=response(body,status)),self.assertRaises(ValueError):verify_public_feed(self.manifest,self.envelope)
+  with patch('requests.get',side_effect=[response(self.manifest),response(self.envelope)]),self.assertRaisesRegex(ValueError,'does not match'):
+   verify_public_feed(self.manifest+b' ',self.envelope)
  def test_manifest_metadata_tamper_is_rejected(self):
   for field,value in [('revision',3),('engineVersion',1),('sha256','0'*64),('envelopePath','published/rules-3.json')]:
    data=json.loads(self.manifest);data[field]=value

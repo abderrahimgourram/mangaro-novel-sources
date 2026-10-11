@@ -89,7 +89,17 @@ def readiness():
             row=state.get('sources',{}).get(source,{})
             require(row.get('approved') is True,'SOURCE_PUBLICATION_GATE_CLOSED')
             require(row.get('lastKnownGood') and row.get('witness'),'AUTHENTICATED_LAST_KNOWN_GOOD_REQUIRED')
-            auth(row['lastKnownGood'])
+            previous=auth(row['lastKnownGood'])
+            require(previous['revision']<current['revision'],'AUTHENTICATED_PRIOR_REVISION_REQUIRED')
+            if row.get('pending'):
+                pending=row['pending']
+                require(pending.get('kind') in {'repair','rollback'},'INVALID_PENDING_OPERATION')
+                require(fingerprint(pending.get('beforeEnvelope'))==pending.get('beforeHash'),'INVALID_PENDING_PARENT')
+                auth(pending['beforeEnvelope'])
+                require(fingerprint(live)==pending['beforeHash'] or fingerprint(current)==pending.get('candidateHash'),'PENDING_REVISION_CANNOT_BE_SAFELY_RECONCILED')
+                eligible.append(source);reason='AUTHENTICATED_PENDING_RECONCILIATION_REQUIRED'
+                rows.append({'source':item['name'],'id':source,'gate':reason})
+                continue
             require(row.get('publishedHash')==fingerprint(live),'PUBLISHED_REVISION_CHANGED')
             require(row['witness'].get('complete') is True,'COMPLETENESS_UNPROVEN')
             if observations is None:
@@ -131,9 +141,11 @@ def execute():
     else:
         import tempfile
         from validate import require_health
+        active_source=None
         def health(candidate):
             (ROOT/'bundle.json').write_text(json.dumps(candidate,ensure_ascii=False,separators=(',',':')))
-            process=subprocess.run([sys.executable,str(HERE/'health.py'),'--bundle',str(ROOT/'bundle.json')],capture_output=True,timeout=600)
+            require(active_source in inventory,'SOURCE_PUBLICATION_GATE_CLOSED')
+            process=subprocess.run([sys.executable,str(HERE/'health.py'),'--bundle',str(ROOT/'bundle.json'),'--source',active_source],capture_output=True,timeout=240)
             report=json.loads((ROOT/'health.json').read_text())
             if process.returncode:
                 failed=[r for r in report if not r.get('completeIndex') or not all(r.get(op) is True for op in ['catalog','search','details','chapters','text'])]
@@ -150,25 +162,28 @@ def execute():
             signature=subprocess.check_output(['openssl','dgst','-sha256','-sign',key_file.name],input=b'MangaroSourceOperationsV1\n'+raw)
             return {'body':base64.b64encode(raw).decode(),'signature':base64.b64encode(signature).decode()}
         def independent(candidate,witness):
-            # Existing health entrypoint checks every bundled source and signed SeaNovel contract.
+            # Recheck the changed source; unchanged mappings must match the anchored current bundle.
             report=health(candidate)
-            require_health(report,candidate)
+            require_health(report,candidate,current=auth(fetch(active_source)),source=active_source)
             known=witness.get('novelWitness',{})
-            observed={r['domain']:{'identityHash':r.get('identityHash'),'chapterCount':r.get('chapterCount')} for r in report}
-            require(set(known)==set(observed),'AUTHENTICATED_NOVEL_IDENTITY_WITNESS_REQUIRED')
+            observed={r['domain']:{'identityHash':r.get('identityHash'),'chapterCount':r.get('chapterCount'),'indexHash':r.get('indexHash')} for r in report}
+            require(set(observed)=={active_source} and set(observed)<=set(known),'AUTHENTICATED_NOVEL_IDENTITY_WITNESS_REQUIRED')
             for domain,actual in observed.items():
                 prior=known[domain]
                 require(actual['identityHash'] and actual['identityHash']==prior.get('identityHash'),'NOVEL_IDENTITY_MISMATCH')
                 require(type(actual['chapterCount']) is int and actual['chapterCount']>=prior.get('chapterCount',0),'UNEXPLAINED_CHAPTER_COUNT_DROP')
-            return {'complete':True,'novelWitness':observed}
+                # A new or changed index needs fresh reviewed identity evidence; a count
+                # alone cannot prove that the previously published chapters survived.
+                require(actual['indexHash'] and actual['indexHash']==prior.get('indexHash'),'CHAPTER_IDENTITY_BASELINE_CHANGED_OR_UNAVAILABLE')
+            return {'complete':True,'novelWitness':dict(known,**observed)}
         def publish(candidate,witness):
             from package import package
-            report=health(candidate);require_health(report,candidate)
+            report=health(candidate);require_health(report,candidate,current=auth(fetch(active_source)),source=active_source)
             manifest,envelope=package(candidate,key_file.name)
             stage=ROOT/'staging';stage.mkdir(exist_ok=True)
             (stage/'manifest.json').write_bytes(manifest);(stage/f"rules-{candidate['revision']}.json").write_bytes(envelope)
             (ROOT/'health.json').write_text(json.dumps(report))
-            env=dict(os.environ,RULE_REVISION=str(candidate['revision']))
+            env=dict(os.environ,RULE_REVISION=str(candidate['revision']),PUBLICATION_SOURCE=active_source)
             result=subprocess.run([sys.executable,str(HERE/'publish.py')],env=env,capture_output=True,timeout=180)
             require(result.returncode==0,'SOURCE_SCOPED_PUBLICATION_FAILED')
             return fetch('')
@@ -181,13 +196,15 @@ def execute():
         require(proof is not None,'REAL_SOURCE_STAGING_ACCEPTANCE_UNAVAILABLE')
         receipt=unseal(proof)
         require(receipt.get('purpose')=='SOURCE_STAGING_ACCEPTANCE_V1' and receipt.get('repository')==REPOSITORY,'STAGING_PROVENANCE_MISMATCH')
-        require(time.time()-receipt.get('verifiedAt',0)<=3600,'STAGING_ACCEPTANCE_EXPIRED')
+        stamp=receipt.get('verifiedAt')
+        require(type(stamp) is int and 0<=time.time()-stamp<=3600,'STAGING_ACCEPTANCE_EXPIRED')
         require(receipt.get('independentRun') and receipt.get('producerRun')!=receipt.get('independentRun'),'INDEPENDENT_STAGING_REQUIRED')
         return receipt
     coordinator=Coordinator(store,auth,independent,stage,publish,fetch)
     results=[]
     try:
         for source in ready['eligible']:
+            active_source=source
             try:
                 coordinator.reconcile(source)
                 state=store.read();row=state['sources'][source];live=auth(fetch(source))

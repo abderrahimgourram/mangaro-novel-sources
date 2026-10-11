@@ -23,11 +23,23 @@ def check_source(source, candidate, deep):
                     attestationState='LOCAL_ATTESTATION_UNAVAILABLE', sourceObservation='UNVERIFIED', bridgeReachability='NOT_CHECKED')
     try:
         from sea_attestation import check
-        result = check(candidate)  # Exact existing HMAC request and response contract.
+        result = check(candidate, deep=True) if deep else check(candidate)
         if result.get('attestationVerified') is not True:
             raise ValueError('ATTESTATION_NOT_VERIFIED')
         for operation in ['catalog', 'search', 'details', 'chapters', 'text']:
             ops[operation] = 'PASS' if result.get(operation) is True else 'FAILED'
+        if deep and result.get('status') in ('failed','blocked'):
+            return dict(classification='BLOCKED_BY_CHALLENGE' if result['status']=='blocked' else 'DEGRADED',
+                        ok=False, complete=False, reason='SIGNED_DEEP_CHECK_FAILED', operation=result.get('failed_stage','chapters'),
+                        operations=ops, evidence='SEANOVEL_ATTESTED_FAILURE', indexState='INTERRUPTED',
+                        attestationState='VERIFIED', sourceObservation='VERIFIED_FAILURE', bridgeReachability='REACHABLE', needsDeep=True)
+        if deep and result.get('completeIndex') is True:
+            ops['chapters'] = ops['pagination'] = 'PASS'
+            return dict(classification='HEALTHY', ok=True, complete=True, reason='VERIFIED_COMPLETE_INDEX',
+                        operations=ops, evidence='SEANOVEL_ATTESTED_COMPLETE_INDEX', needsDeep=False,
+                        observedChapterCount=result['chapter_count'], chapterCount=result['officialTotal'], indexState='COMPLETE',
+                        identityHash=result['identityHash'], indexHash=result['indexHash'],
+                        attestationState='VERIFIED', sourceObservation='ATTESTED_COMPLETE_INDEX', bridgeReachability='REACHABLE')
         # Existing attestation authenticates a sample, not an official total or pagination termination.
         ops['chapters'] = ops['pagination'] = 'PARTIAL'
         return dict(classification='DEGRADED', ok=True, complete=False, reason='ATTESTED_SAMPLE_UNKNOWN_INDEX_COMPLETENESS',
