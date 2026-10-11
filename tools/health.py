@@ -143,7 +143,8 @@ if __name__ == '__main__':
     CONFIG = {x['domain']: x['selectors'] for x in candidate['sources']}
     digest = hashlib.sha256(json.dumps(candidate, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
     report = []
-    for domain in SAMPLES:
+    for source in candidate['sources']:
+        domain = source['domain']
         if args.source != 'all' and domain != args.source:
             continue
         result = {'domain':domain,'rulesSha256': digest}
@@ -152,8 +153,16 @@ if __name__ == '__main__':
                 from sea_attestation import check
                 result['checking']='attestation'
                 result=check(candidate)
+                result.update(completeIndex=False, indexState='UNKNOWN_TOTAL', verificationTier='ATTESTED_SAMPLE')
             else:
-                probe(domain, result)
+                from bounded_health import probe as bounded_probe
+                observation = bounded_probe(domain, CONFIG[domain], deep=True)
+                result.update(observation, completeIndex=observation.get('complete', False), verificationTier='ACCEPTANCE')
+                for operation in ['catalog', 'search', 'details', 'chapters', 'text']:
+                    result[operation] = observation['operations'].get(operation) == 'PASS'
+                if not observation.get('ok'):
+                    result['failedStage'] = observation.get('operation', 'unknown')
+            result.pop('requestNonce', None)
         except Exception as error:
             result.update(healthy=False, failedStage=result.pop('checking', 'unknown'), error=type(error).__name__)
             response = getattr(error, 'response', None)
@@ -164,4 +173,4 @@ if __name__ == '__main__':
     (ROOT / 'health.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     for item in report:
         print(item)
-    raise SystemExit(0 if all((all((item.get(key) for key in ['catalog', 'search', 'details', 'chapters', 'text'])) for item in report)) else 1)
+    raise SystemExit(0 if all((item.get('completeIndex') is True and all((item.get(key) for key in ['catalog', 'search', 'details', 'chapters', 'text'])) for item in report)) else 1)

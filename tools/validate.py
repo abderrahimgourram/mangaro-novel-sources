@@ -38,7 +38,7 @@ def require_health(report,bundle):
  import hashlib
  digest=hashlib.sha256(json.dumps(validate(bundle),ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
  require(isinstance(report,list) and len(report)==4 and {row.get('domain') for row in report}==set(DOMAINS.values()),'Incomplete health report')
- require(all(row.get('rulesSha256')==digest and all(row.get(x) is True for x in ('catalog','search','details','chapters','text')) for row in report),'Candidate did not pass all live checks')
+ require(all(row.get('rulesSha256')==digest and row.get('completeIndex') is True and (row.get('domain')!='seanovel.org' or row.get('attestationVerified') is True) and all(row.get(x) is True for x in ('catalog','search','details','chapters','text')) for row in report),'Candidate did not pass all live checks')
 if __name__=='__main__':
  import argparse
  parser=argparse.ArgumentParser();parser.add_argument('--revision',type=int,default=1);args=parser.parse_args()

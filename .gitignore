@@ -7,3 +7,13 @@ health.json
 staging/
 
 .vercel/
+
+# Private monitoring checkpoints and sanitized local run outputs
+.source-health/
+.publisher-state/
+health-plan.json
+health-plan-report.json
+monitor-report.json
+publisher-report.json
+native-evidence.json
+publisher-android-result.txt
