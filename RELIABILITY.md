@@ -1,5 +1,47 @@
 # Source reliability monitoring
 
+## Operational closure — 2026-10-12
+
+Authenticated production CURRENT is **revision 4, schema 2 / engine 3 / PARTIAL**:
+[public manifest](https://raw.githubusercontent.com/abderrahimgourram/mangaro-novel-sources/main/published/v2/manifest.json),
+[immutable release](https://github.com/abderrahimgourram/mangaro-novel-sources/releases/tag/novel-rules-partial-v4).
+[Genesis run](https://github.com/abderrahimgourram/mangaro-novel-sources/actions/runs/38185370761)
+independently reverified Kolnovel's 507-entry closed published chain (official total
+unknown), Cenele 632/632 and SeaNovel 831/831, with representative text. Its signed
+receipt explicitly binds owner-attested **local** Android acceptance of exact bytes;
+it does not claim Android ran on GitHub. The signed `source-operations-state` journal
+records CURRENT, source approval gates false, and no previous LAST-GOOD.
+
+SeaNovel's compatible bridge is deployed on the existing endpoint; legacy and partial
+HMAC v2 requests were verified in [CI](https://github.com/abderrahimgourram/mangaro-novel-sources/actions/runs/38183027055).
+Sunovels remains bundled and DEGRADED: different fractional labels share integer
+addresses in upstream HTML and Flight. Locked bodies provide no equivalence proof.
+No speculative URL, chapter key migration, or complete-index claim is authorized.
+
+Manga monitoring is `17 */6 * * *`, retry `47 */3 * * *`; novel monitoring is
+`43 */12 * * *`, retry `53 */3 * * *`. Both use conditional deep `29 3 * * *`
+and weekly `7 4 * * 0`. Actual schedule events are recorded separately from dispatch
+runs. Post-genesis novel cron is not yet observed as of this verification. Routine jobs
+never launch Gradle/emulators or access production signing credentials.
+
+**Automatic publication and rollback remain intentionally disabled.** There is no
+meaningful accepted second rule change or authentic earlier production LAST-GOOD.
+Do not reissue an identical bundle to create history. Activation requires a genuine
+required declarative correction, pinned CURRENT/parent lineage, exact source preservation,
+fresh independent source/runtime staging, authenticated earlier history, source approval,
+and independently exercised source-scoped recovery before enabling the applicable gate.
+Manga native BUILT_IN sources are not publishable declarative replacements.
+
+Maintenance: inspect health summaries and trusted history coverage/classification;
+use `python tools/verify.py --directory published/v2` for pinned artifact verification
+and `python tools/operation_adapter.py` for read-only journal eligibility. Fetch the public
+manifest/envelope and compare exact bytes before claiming delivery. Keep signing in
+`reviewed-novel-rules` and existing main-only protections. Accepted v2 operations reuse
+the exact authenticated staging artifact; re-signing ECDSA bytes would break receipt
+bindings. Repair an interrupted signed reservation only with byte-identical evidence.
+Never reset monitoring counters, alter immutable revision 4, or treat fixtures as authority.
+
+
 ## Schedule and budgets
 
 Routine: `43 */12 * * *` (novels). Three-hour retry dispatcher: `53 */3 * * *`. Daily targeted deep: `29 3 * * *`.
@@ -60,13 +102,13 @@ Existing GitHub environment protections and allowed branches still apply.
 ### Publication initialization and deep attestation
 
 The existing reviewed `publish.yml` dispatch is the one-time genesis path. It must
-validate all four sources before signing the atomic four-source bundle with the
+validate every included source before signing the versioned partial bundle (legacy FULL still requires all four) with the
 Android-pinned key, verify uploaded immutable assets, and then advance the feed.
 A first signed release is CURRENT only; it is not an invented prior LAST-KNOWN-GOOD.
 Automatic operations still require a separately authenticated earlier published
 revision, approved source journal, and independent candidate-bound staging receipt.
 An existing published bundle permits source-scoped acceptance only when every other
-mapping is identical. Shared bundle signatures still cover all four mappings.
+mapping is identical. Shared bundle signatures cover every mapping delivered in that bundle.
 Chapter index hashes must match reviewed journal evidence; totals alone cannot prove
 chapter identity preservation. New index evidence requires explicit baseline review.
 
@@ -164,7 +206,7 @@ the index and verify unchanged IDs, URLs, titles and boundaries. Displayed numer
 are not identities. `chapterCount` remains unknown when no official total is supplied;
 `verifiedChapterCount` records the actual distinct chain, with
 `completenessBasis=VERIFIED_CLOSED_CHAPTER_CHAIN`. This does not prove availability of
-unpublished chapters. Acceptance has a 600-request/300-second ceiling and at most two
+unpublished chapters. Acceptance has a 600-request/300-second ceiling and at most four
 concurrent metadata requests, stopping before chapter text; only three representative
 chapter bodies are sampled. Routine/deep monitoring retains its original smaller budget
 and never traverses this whole chain.
@@ -176,7 +218,7 @@ publishes distinct stable paths or another genuinely verified identity mechanism
 supported, this source and all-source genesis acceptance remain blocked. No selector
 change can recover two different chapter bodies from the same ambiguous URL.
 
-## Versioned partial updates (implementation only; production disabled)
+## Versioned partial updates (production feed live; automatic operations disabled)
 
 Legacy schema 1/engines 1–2 still mean exactly four sources. Schema 2/engine 3 adds a
 mandatory `mode`: `PARTIAL` allows 1–4 unique registered replacements; `FULL` requires
@@ -203,14 +245,13 @@ runs. Existing operation journals supply this proof; absence or mismatch blocks 
 The local SeaNovel candidate validator accepts the explicit new shape; HMAC protocol v2,
 request/response bytes, secrets, digest, revision, nonce, expiry and full-index verification
 are unchanged. There is no legacy projection or substituted digest. This compatibility
-extension has NOT been deployed. Authenticated partial attestation requires a separately
-approved deployment of that small validator change; existing live legacy attestation stays
+extension was deployed compatibly to the existing bridge and verified for legacy and partial
+requests (see operational closure above); existing HMAC keys and protocol bindings remain
 intact. No public key, production variable or Android approval flag has been changed.
 
 Disposable signed fixtures test the real consumers but cannot verify against the production
-key. Actual pinned-key signing/staging must run in the existing authorized CI environment
-after approval to commit/push these changes. No new CURRENT, LAST-GOOD or receipt is minted
-from these fixtures. Genesis alone cannot enable rollback or automatic publication.
+key. Actual pinned-key signing/staging and genesis ran in the existing authorized CI environment
+(see operational closure). No CURRENT, LAST-GOOD or receipt is minted from these fixtures. Genesis alone cannot enable rollback or automatic publication.
 
 ## Explicit real genesis acceptance
 
