@@ -127,6 +127,33 @@ def readiness():
     return {'sources':rows,'eligible':eligible,'production':'NOT_EXECUTED'}
 
 
+def accepted_staging_pair(candidate,proof,source=None):
+    """Reuse independently accepted signed bytes; ECDSA re-signing changes their receipt hash."""
+    import tempfile
+    from validate import require_staging
+    from verify import verify_pair,manifest_bytes
+    from genesis import open_journal
+    require_staging(proof,candidate,source)
+    receipt=open_journal(proof)
+    run=receipt.get('producerRun','')
+    require(isinstance(run,str) and run.isdigit(),'AUTHENTICATED_STAGING_RUN_REQUIRED')
+    meta=api('GET',f'repos/{REPOSITORY}/actions/runs/{run}')
+    workflow=api('GET',f'repos/{REPOSITORY}/actions/workflows/publish.yml')
+    require(meta.get('conclusion')=='success' and meta.get('status')=='completed' and
+            meta.get('head_branch')=='main' and meta.get('event')=='workflow_dispatch' and
+            meta.get('workflow_id')==workflow['id'],'AUTHENTICATED_STAGING_RUN_REQUIRED')
+    with tempfile.TemporaryDirectory(prefix='novel-accepted-stage-') as folder:
+        result=subprocess.run(['gh','run','download',run,'--repo',REPOSITORY,'--name',f'signed-novel-staging-{run}','--dir',folder],capture_output=True,timeout=60)
+        require(result.returncode==0,'ACCEPTED_STAGING_ARTIFACT_UNAVAILABLE')
+        with (Path(folder)/'manifest.json').open('rb') as stream:manifest=stream.read(8193)
+        require(len(manifest)<=8192,'OVERSIZED_STAGING_MANIFEST')
+        data=json.loads(manifest);manifest_bytes(data)
+        with (Path(folder)/Path(data['envelopePath']).name).open('rb') as stream:envelope=stream.read(96*1024+1)
+        require(verify_pair(manifest,envelope)==candidate,'ACCEPTED_STAGING_CANDIDATE_MISMATCH')
+        require_staging(proof,candidate,source,manifest=manifest,envelope=envelope)
+        return manifest,envelope
+
+
 def execute():
     require(os.environ.get('MANGARO_AUTOPUBLISH_ENABLED')=='true','AUTOPUBLISH_DISABLED')
     require(os.environ.get('GITHUB_REPOSITORY')==REPOSITORY and os.environ.get('GITHUB_REF')=='refs/heads/main','UNTRUSTED_OPERATION_RUN')
@@ -185,15 +212,18 @@ def execute():
                 require(actual['indexHash'] and actual['indexHash']==prior.get('indexHash'),'CHAPTER_IDENTITY_BASELINE_CHANGED_OR_UNAVAILABLE')
             return {'complete':True,'novelWitness':dict(known,**observed)}
         def publish(candidate,witness):
-            from package import package
             report=health(candidate);require_health(report,candidate,current=auth(fetch(active_source)),source=active_source)
-            manifest,envelope=package(candidate,key_file.name)
+            if candidate['schemaVersion']==2:
+                proof=store.read().get('stagingReceipts',{}).get(fingerprint(candidate))
+                require(proof is not None,'REAL_SOURCE_STAGING_ACCEPTANCE_UNAVAILABLE')
+                manifest,envelope=accepted_staging_pair(candidate,proof,active_source)
+            else:
+                from package import package
+                manifest,envelope=package(candidate,key_file.name)
             stage=ROOT/'staging';stage.mkdir(exist_ok=True)
             (stage/'manifest.json').write_bytes(manifest);(stage/f"rules-{candidate['revision']}.json").write_bytes(envelope)
             (ROOT/'health.json').write_text(json.dumps(report))
             if candidate['schemaVersion']==2:
-                proof=store.read().get('stagingReceipts',{}).get(fingerprint(candidate))
-                require(proof is not None,'REAL_SOURCE_STAGING_ACCEPTANCE_UNAVAILABLE')
                 (stage/'acceptance.json').write_text(json.dumps(proof))
             env=dict(os.environ,RULE_REVISION=str(candidate['revision']),PUBLICATION_SOURCE=active_source)
             result=subprocess.run([sys.executable,str(HERE/'publish.py')],env=env,capture_output=True,timeout=180)

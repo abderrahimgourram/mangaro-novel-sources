@@ -193,4 +193,35 @@ class PublishedContentEncodingTest(unittest.TestCase):
                 _,_,fetch,_,_=operation_adapter.configuration()
                 with self.assertRaises((ValueError,OperationBlocked)):fetch('cenele.com')
 
+class AcceptedStagingBytesTest(unittest.TestCase):
+    """Receipt mocks isolate retrieval; real pinned artifact signatures are still checked."""
+    def exercise(self, *, failed_run=False, tampered=False, mismatched=False):
+        import json,subprocess
+        from unittest.mock import patch
+        import operation_adapter,genesis,validate
+        from verify import verify_pair
+        root=HERE.parent;manifest=(root/'published/v2/manifest.json').read_bytes()
+        envelope=(root/'published/v2/rules-4.json').read_bytes()
+        candidate=verify_pair(manifest,envelope)
+        if mismatched:candidate=dict(candidate,revision=5)
+        meta=dict(conclusion='failure' if failed_run else 'success',status='completed',head_branch='main',event='workflow_dispatch',workflow_id=7)
+        real_run=subprocess.run
+        def download(args,**kwargs):
+            if args[0]!='gh':return real_run(args,**kwargs)
+            folder=Path(args[args.index('--dir')+1]);(folder/'manifest.json').write_bytes(manifest)
+            (folder/'rules-4.json').write_bytes(envelope+b'x' if tampered else envelope)
+            return subprocess.CompletedProcess(args,0)
+        proof={'fixture':'receipt verification covered separately'}
+        with patch.object(operation_adapter,'api',side_effect=[meta,{'id':7}]),patch.object(genesis,'open_journal',return_value={'producerRun':'123'}),patch.object(validate,'require_staging') as receipt,patch('subprocess.run',side_effect=download) as transport:
+            if failed_run or tampered or mismatched:
+                with self.assertRaises((ValueError,OperationBlocked)):operation_adapter.accepted_staging_pair(candidate,proof,'cenele.com')
+                if failed_run:transport.assert_not_called()
+            else:
+                self.assertEqual(operation_adapter.accepted_staging_pair(candidate,proof,'cenele.com'),(manifest,envelope))
+                receipt.assert_called_with(proof,candidate,'cenele.com',manifest=manifest,envelope=envelope)
+    def test_source_scoped_acceptance_reuses_exact_signed_bytes(self):self.exercise()
+    def test_failed_producer_blocks_before_download(self):self.exercise(failed_run=True)
+    def test_tampered_artifact_blocks(self):self.exercise(tampered=True)
+    def test_candidate_revision_mismatch_blocks(self):self.exercise(mismatched=True)
+
 if __name__=='__main__':unittest.main()
