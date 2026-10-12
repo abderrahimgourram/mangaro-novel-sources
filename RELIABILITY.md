@@ -218,7 +218,7 @@ publishes distinct stable paths or another genuinely verified identity mechanism
 supported, this source and all-source genesis acceptance remain blocked. No selector
 change can recover two different chapter bodies from the same ambiguous URL.
 
-## Versioned partial updates (implementation only; production disabled)
+## Versioned partial updates (production feed live; automatic operations disabled)
 
 Legacy schema 1/engines 1–2 still mean exactly four sources. Schema 2/engine 3 adds a
 mandatory `mode`: `PARTIAL` allows 1–4 unique registered replacements; `FULL` requires
@@ -250,9 +250,8 @@ requests (see operational closure above); existing HMAC keys and protocol bindin
 intact. No public key, production variable or Android approval flag has been changed.
 
 Disposable signed fixtures test the real consumers but cannot verify against the production
-key. Actual pinned-key signing/staging must run in the existing authorized CI environment
-after approval to commit/push these changes. No new CURRENT, LAST-GOOD or receipt is minted
-from these fixtures. Genesis alone cannot enable rollback or automatic publication.
+key. Actual pinned-key signing/staging and genesis ran in the existing authorized CI environment
+(see operational closure). No CURRENT, LAST-GOOD or receipt is minted from these fixtures. Genesis alone cannot enable rollback or automatic publication.
 
 ## Explicit real genesis acceptance
 
