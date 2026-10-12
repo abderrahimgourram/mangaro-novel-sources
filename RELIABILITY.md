@@ -17,6 +17,7 @@ HMAC v2 requests were verified in [CI](https://github.com/abderrahimgourram/mang
 Sunovels remains bundled and DEGRADED: different fractional labels share integer
 addresses in upstream HTML and Flight. Locked bodies provide no equivalence proof.
 No speculative URL, chapter key migration, or complete-index claim is authorized.
+The [operator handoff](SUNOVELS-UPSTREAM.md) is prepared, not sent.
 
 Manga monitoring is `17 */6 * * *`, retry `47 */3 * * *`; novel monitoring is
 `43 */12 * * *`, retry `53 */3 * * *`. Both use conditional deep `29 3 * * *`
@@ -123,9 +124,12 @@ The existing diagnostic workflow verifies both protocols against the authorized
 bridge or a staged deployment of that same project. Its signed source evidence does
 not establish publication provenance or bypass genesis and rollback requirements.
 
-The Android novel update worker currently has `PUBLIC_PIPELINE_APPROVED=false`.
-Feed publication alone does not activate Android consumption; that application change
-requires a separate authorized release and is outside publisher maintenance.
+Android local audit-only preview acceptance passed 7/7 with the production key, real
+Cenele text and saved chapter/paragraph/offset. R8/resource shrinking stayed enabled;
+only the preview used an embedded test entry point and debug signing. This is not
+production-release or Android 16 device verification. The minimal next-APK consumer
+activation is prepared locally after acceptance; installed clients remain unchanged
+until a separately approved application release. No APK is published by these workflows.
 
 `python -m unittest discover -s tests -v`
 `actionlint -shellcheck=''`
