@@ -1,0 +1,7 @@
+{
+  "catalog": {"status":"success","data":[{"id":96,"name":"Synthetic work"}],"total":1},
+  "search": {"status":"success","works":[{"id":96,"name":"Synthetic work"}],"total_works":1},
+  "details": {"status":"success","data":{"id":96,"name":"Synthetic work","author":"Synthetic author","story":"Synthetic metadata, no source content.","status":"ongoing"}},
+  "index": {"status":"success","data":[{"volume_number":1,"volume_title":"Synthetic volume","chapters":[{"id":20716,"work_id":96,"chapter_number":1,"chapter_title":"Synthetic chapter","is_free":true},{"id":20717,"work_id":96,"chapter_number":2,"chapter_title":"Synthetic restricted chapter","is_free":false}]}],"total_chapters":2},
+  "text": {"status":"success","data":{"id":20716,"chapter_number":1,"novel_title":"Synthetic work","is_free":true}}
+}
