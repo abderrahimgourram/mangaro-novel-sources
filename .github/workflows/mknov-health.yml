@@ -21,7 +21,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: mknov-health-${{ github.ref }}
+  # All refs observe the same upstream; serialize manual and scheduled probes.
+  group: mknov-health
   cancel-in-progress: false
 jobs:
   contracts:
@@ -56,7 +57,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: mknov-health-${{ github.run_id }}
+          name: mknov-health-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/mknov-health-report.json
           if-no-files-found: error
           retention-days: 7

@@ -40,7 +40,7 @@ retrieved independently from search, avoiding per-result detail requests.
 
 - Serial requests; at least one second between request starts.
 - Ordinary: four requests, maximum five with retries. Deep: five, maximum six.
-- One retry **total**, only for transport/timeouts or HTTP 5xx, one-second backoff.
+- One retry **total**, only for transport/timeouts (including truncated HTTP reads) or HTTP 5xx, one-second backoff.
 - Per-request timeout at most 12 seconds; checked elapsed budget 80/120 seconds.
   A currently blocked socket read can run up to its timeout beyond the budget;
   the workflow also has a four-minute limit. No infinite retries.
@@ -66,7 +66,10 @@ retrieved independently from search, avoiding per-result detail requests.
 production secrets, no environment, APK build, source publication or feed writes.
 Pinned actions checkout without persisted credentials. Offline contracts run
 first. Observation reports are uploaded with `always()`, retained seven days;
-missing evidence fails rather than manufacturing a PASS.
+missing evidence fails rather than manufacturing a PASS. A repository-wide
+`mknov-health` concurrency group serializes probes across all refs; pending GitHub
+runs may be superseded under GitHub concurrency semantics. Reports include the
+run attempt in their artifact name to retain previous attempts without conflicts.
 
 - Daily ordinary sample: 06:17 UTC.
 - Weekly deeper sample: Sunday 07:47 UTC.
@@ -110,11 +113,36 @@ Ordered index identity/access SHA-256:
 `cc439c92eb44a22f0cc5adc2cf3cd9bf7e0d00006615a7d82710ef9162e806ed`.
 Only metadata reports were retained locally, not chapter content.
 
-**Existing suite**: baseline 189 tests had 5 failures, 3 errors and 2 skips before
-Mknov edits. The same eight tests remain failing/erroring afterward; they are
-pre-existing bounded-health representation assumptions and a Sunovels staging
-network fixture. They were not weakened or modified. Full final counts and CI
-links are recorded in the local delivery report. `actionlint` v1.7.12 passed.
+**Independent baseline audit (hardening phase)**: clean detached worktrees
+at `27b887d910e556b92771ac47ad30016c71b8296a` (pre-Mknov `main`) and
+`1a05755f1fcb55e283bda58464023485a9b855a6` (original monitor) passed 150
+and 188 tests respectively, each with one optional skip, using the same Python
+3.14.7 interpreter and installed dependencies. The earlier 189/227-test reports
+were from the owner's **dirty working copy**, including uncommitted Sunovels
+changes and extra untracked tests; they were not clean commit acceptance.
+
+The seven bounded-health failures/errors reproduce only with that working
+copy's new strict public-metadata parser and old HTML-only fixture. Direct parser
+inspection reports `INDEX_OWNERSHIP_MISSING`; the wrapper fails closed with
+`REPRESENTATION_INVALID` before pagination/text assertions run. The eighth case
+is an untracked Miniflare test depending on a local Worker at 127.0.0.1:8787;
+it reports `STAGING_NETWORK_FAILURE` when that service is absent. It does not
+exist in either committed baseline. These unrelated files/assertions have not
+been modified or excluded. This is not evidence of a Mknov regression.
+
+**Targeted hardening**: deterministic counterexamples demonstrated (1) incomplete
+HTTP reads being mislabeled `MONITOR_INTERNAL_ERROR`, (2) per-ref concurrency
+allowing simultaneous probes of the same upstream, and (3) artifact names
+colliding across run attempts under immutable artifact semantics. Narrow fixes
+classify incomplete HTTP reads as transport failures under the existing single
+retry budget, serialize all refs, and distinguish artifact attempts. Original
+mode selection is unchanged and tested against the actual workflow expression:
+manual monitor/deep, daily/weekly cron, push and PR. CLI failure tests verify a
+non-PASS JSON artifact plus exit 2; atomic-replace failure preserves old reports.
+The focused suite now contains **45 tests**, all passing locally. The independent
+review does not claim GitHub deep acceptance from the older local observation;
+that separate single deep run is recorded in the owner-review handoff report.
+`actionlint` v1.7.12 passes. No scheduled frequency or publisher gate changed.
 
 ## Boundaries and remaining acceptance
 

@@ -1,12 +1,17 @@
 """Offline synthetic contract/transport tests. No upstream chapter bodies recorded."""
+import ast
+import contextlib
 import copy
+from http.client import IncompleteRead
 from email.message import Message
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from urllib import error
+from unittest.mock import patch
 
 from tools import mknov_health as m
 
@@ -248,6 +253,22 @@ class MknovTransportTests(unittest.TestCase):
         self.assertEqual(c.requests, 2)
         self.assertGreaterEqual(c.clock(), 1)
 
+    def test_incomplete_http_read_is_transport_not_monitor_defect(self):
+        c, _ = client([IncompleteRead(b'SYNTHETIC_PRIVATE_PARTIAL', 100),
+                       IncompleteRead(b'SYNTHETIC_PRIVATE_PARTIAL', 100)])
+        report = m.observe(client=c)
+        self.assertEqual(report['classification'], 'INSUFFICIENT_EVIDENCE')
+        self.assertEqual(report['reason'], 'TRANSPORT_FAILURE')
+        self.assertEqual(c.requests, 2)
+        self.assertNotIn('SYNTHETIC_PRIVATE_PARTIAL', json.dumps(report))
+
+    def test_deep_retry_shares_single_total_budget(self):
+        c, _ = client([TimeoutError()] + responses(sample(), True), True)
+        report = m.observe('deep', c)
+        self.assertEqual(report['classification'], 'PASS')
+        self.assertEqual(c.requests, 6)
+        self.assertEqual(sum(x['endpoint'] == 'getChaptersByWorkId' for x in c.audit), 1)
+
     def test_retry_can_recover(self):
         c, _ = client([TimeoutError(), Response(b'{"status":"success"}')])
         self.assertEqual(c.post('getWorks', {})['status'], 'success')
@@ -313,6 +334,87 @@ class MknovTransportTests(unittest.TestCase):
         with self.assertRaises(m.ObservationError):
             c.post('getWorks', {})
         self.assertEqual(c.requests, 0)
+
+
+class MknovWorkflowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = (Path(__file__).parents[1] / '.github/workflows/mknov-health.yml').read_text()
+
+    def expression(self, prefix, values):
+        # Interpret the actual workflow's small boolean expression, not a second
+        # independent policy. Reject arbitrary AST/code and test every event path.
+        line = next(line for line in self.workflow.splitlines() if line.strip().startswith(prefix))
+        expression = line.split(prefix, 1)[1].strip().removeprefix('${{').removesuffix('}}').strip()
+        for key, value in values.items():
+            expression = expression.replace(key, repr(value))
+        tree = ast.parse(expression.replace('&&', ' and ').replace('||', ' or '), mode='eval')
+
+        def interpret(node):
+            if isinstance(node, ast.Expression):
+                return interpret(node.body)
+            if isinstance(node, ast.Constant):
+                return node.value
+            if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq):
+                return interpret(node.left) == interpret(node.comparators[0])
+            if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+                result = interpret(node.values[0])
+                for value in node.values[1:]:
+                    result = (interpret(value) if result else result) if isinstance(node.op, ast.And) else (result if result else interpret(value))
+                return result
+            self.fail('Unexpected workflow expression; review its semantics explicitly')
+        return interpret(tree)
+
+    def test_modes_and_live_gates_for_all_event_paths(self):
+        cases = [('workflow_dispatch', 'monitor', '', 'monitor', True),
+                 ('workflow_dispatch', 'deep', '', 'deep', True),
+                 ('workflow_dispatch', 'monitor', '47 7 * * 0', 'monitor', True),
+                 ('schedule', '', '17 6 * * *', 'monitor', True),
+                 ('schedule', '', '47 7 * * 0', 'deep', True),
+                 ('push', '', '', 'monitor', False),
+                 ('pull_request', '', '', 'monitor', False)]
+        for event, mode, schedule, expected, live in cases:
+            with self.subTest(event=event, mode=mode, schedule=schedule):
+                values = {'github.event_name':event, 'inputs.mode':mode, 'github.event.schedule':schedule}
+                self.assertEqual(self.expression('MKNOV_MODE:', values), expected)
+                self.assertEqual(self.expression('if:', values), live)
+        self.assertIn("- cron: '17 6 * * *'", self.workflow)
+        self.assertIn("- cron: '47 7 * * 0'", self.workflow)
+
+    def test_all_refs_share_one_upstream_concurrency_group(self):
+        group = next(line.strip() for line in self.workflow.splitlines() if line.strip().startswith('group:'))
+        self.assertEqual(group, 'group: mknov-health')
+        self.assertIn('cancel-in-progress: false', self.workflow)
+
+    def test_artifact_names_preserve_each_run_attempt(self):
+        self.assertIn('name: mknov-health-${{ github.run_id }}-${{ github.run_attempt }}', self.workflow)
+        self.assertIn('if-no-files-found: error', self.workflow)
+        self.assertIn('retention-days: 7', self.workflow)
+        self.assertNotIn('continue-on-error:', self.workflow)
+
+
+class MknovReportTests(unittest.TestCase):
+    def test_failure_cli_writes_metadata_artifact_and_fails(self):
+        c, _ = client([Response(b'', 403)])
+        report = m.observe(client=c)
+        with tempfile.TemporaryDirectory() as directory:
+            output, summary = Path(directory) / 'failure.json', Path(directory) / 'summary.md'
+            with patch.object(m, 'observe', return_value=report), patch('sys.argv', ['monitor', '--output', str(output)]), \
+                    patch.dict(os.environ, {'GITHUB_STEP_SUMMARY':str(summary)}), contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(m.main(), 2)
+            self.assertEqual(json.loads(output.read_text())['classification'], 'BLOCKED_BY_UPSTREAM')
+            self.assertIn('BLOCKED_BY_UPSTREAM', summary.read_text())
+            self.assertNotIn('content', stdout.getvalue())
+
+    def test_atomic_replace_failure_preserves_previous_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'report.json'
+            output.write_text('previous safe report')
+            with patch.object(m.os, 'replace', side_effect=OSError('synthetic disk failure')):
+                with self.assertRaises(OSError):
+                    m.save_report(output, {'classification':'FAIL'})
+            self.assertEqual(output.read_text(), 'previous safe report')
+            self.assertEqual([p.name for p in Path(directory).iterdir()], ['report.json'])
 
 
 if __name__ == '__main__':

@@ -7,6 +7,7 @@ No upstream strings (including error bodies or story text) enter reports.
 """
 import argparse
 import hashlib
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -147,7 +148,7 @@ class Client:
                     self.check_status(exc.code)
                 except ObservationError as failure:
                     issue = failure
-            except (error.URLError, TimeoutError, socket.timeout, ConnectionError, OSError):
+            except (error.URLError, TimeoutError, socket.timeout, ConnectionError, OSError, HTTPException):
                 issue = ObservationError('TRANSPORT_FAILURE', 'INSUFFICIENT_EVIDENCE')
             except ObservationError as exc:
                 issue = exc
